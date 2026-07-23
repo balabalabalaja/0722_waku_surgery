@@ -1,0 +1,17 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Regenerable pipeline evidence + raw design source — not needed to build the
+# playable (public/ holds the runtime assets). Kept out of the git import so the
+# waku push source.zip stays lean; the reports (docs/rebuild/*.md) are kept.
+docs/rebuild/evidence-build/
+docs/rebuild/evidence-harden/
+docs/rebuild/ui-previews/
+docs/rebuild/*.png
+assets/

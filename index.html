@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0a0e16" />
+    <title>SURGERY — art-history face collage</title>
+    <script type="application/polyverse-manifest">
+      {
+        "name": "SURGERY",
+        "runtime": "@polyverse/content-runtime@1",
+        "capabilities": [
+          "app.comment.compose",
+          "assets.write",
+          "assets.read.own",
+          "media.image.open"
+        ]
+      }
+    </script>
+    <script src="./vendor/polyverse-content-runtime.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

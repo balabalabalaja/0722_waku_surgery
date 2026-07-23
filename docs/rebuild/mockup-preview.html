@@ -1,0 +1,306 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Surgery — visual mock v1</title>
+<style>
+  html,body{margin:0;background:#111}
+  canvas{display:block;width:900px;height:1600px}
+</style>
+</head>
+<body>
+<canvas id="c" width="900" height="1600"></canvas>
+<script>
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const W = 900, H = 1600;
+const P = '../../assets/parts/';
+const names = {
+  nose:  Array.from({length:8}, (_,i)=>`nose_0${i+1}.png`),
+  eye:   Array.from({length:10},(_,i)=>`eye_${String(i+1).padStart(2,'0')}.png`),
+  mouth: Array.from({length:8}, (_,i)=>`mouth_0${i+1}.png`)
+};
+const imgs = {};
+let pending = 0;
+for (const k in names) {
+  imgs[k] = names[k].map(n => {
+    pending++;
+    const im = new Image();
+    im.onload = im.onerror = () => { if (--pending === 0) draw(); };
+    im.src = P + n;
+    return im;
+  });
+}
+
+// soft elliptical alpha mask for one asset
+function soft(im, w, h, feather) {
+  const o = document.createElement('canvas');
+  o.width = w; o.height = h;
+  const c = o.getContext('2d');
+  c.drawImage(im, 0, 0, w, h);
+  // feather the elliptical edge with a blurred white ellipse mask
+  const m = document.createElement('canvas');
+  m.width = w; m.height = h;
+  const mc = m.getContext('2d');
+  mc.filter = `blur(${Math.max(4, Math.min(w, h) * 0.07)}px)`;
+  mc.fillStyle = '#fff';
+  mc.beginPath();
+  mc.ellipse(w/2, h/2, (w/2) * feather, (h/2) * feather, 0, 0, Math.PI*2);
+  mc.fill();
+  c.globalCompositeOperation = 'destination-in';
+  c.drawImage(m, 0, 0);
+  return o;
+}
+
+function ringShadow(cx, cy, r, band) {
+  // tight defined drop shadow (player: sharper, not subtle)
+  ctx.save();
+  ctx.filter = 'blur(20px)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = band * 1.15;
+  ctx.beginPath();
+  ctx.arc(cx + 24, cy + 36, r, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.filter = 'blur(7px)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.62)';
+  ctx.lineWidth = band * 0.92;
+  ctx.beginPath();
+  ctx.arc(cx + 15, cy + 24, r, 0, Math.PI*2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// shared brush-stroke grain tile for the painterly band texture
+const grain = (() => {
+  const g = document.createElement('canvas');
+  g.width = g.height = 256;
+  const c = g.getContext('2d');
+  for (let i = 0; i < 900; i++) {
+    const x = Math.random()*256, y = Math.random()*256;
+    const a = Math.random()*Math.PI, L = 4 + Math.random()*14;
+    c.strokeStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)';
+    c.lineWidth = 1 + Math.random()*1.6;
+    c.beginPath();
+    c.moveTo(x, y); c.lineTo(x + Math.cos(a)*L, y + Math.sin(a)*L);
+    c.stroke();
+  }
+  return g;
+})();
+
+function paintGrain(cx, cy, r, band) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + band*0.62, 0, Math.PI*2);
+  ctx.arc(cx, cy, Math.max(1, r - band*0.62), 0, Math.PI*2, true);
+  ctx.clip('evenodd');
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = 0.3;
+  for (let gx = cx - r - band; gx < cx + r + band; gx += 256)
+    for (let gy = cy - r - band; gy < cy + r + band; gy += 256)
+      ctx.drawImage(grain, gx, gy);
+  ctx.restore();
+}
+
+function ringSpecular(cx, cy, r, band) {
+  ctx.save();
+  ctx.filter = 'blur(10px)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = band * 0.28;
+  ctx.beginPath();
+  ctx.arc(cx - 6, cy - 10, r + band*0.18, -2.4, -0.7);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// draw one dial: blurred continuous band pass + sharp soft-masked pass
+function dial(list, cx, cy, r, w, h, a0, jitter) {
+  const n = list.length;
+  ringShadow(cx, cy, r, Math.max(w,h) * 0.9);
+  // pass 1: continuous painterly band — interpolated daubs along the ring
+  // path, smeared with tangent-leaning strokes + hue/brightness jitter
+  ctx.save();
+  const steps = 5;
+  for (let i = 0; i < n; i++) {
+    const a1 = a0 + i * 2*Math.PI/n;
+    const a2 = a0 + (i+1) * 2*Math.PI/n;
+    for (let k = 0; k < steps; k++) {
+      const t = k / steps;
+      const a = a1 + (a2 - a1) * t;
+      const im = t < 0.5 ? list[i] : list[(i+1) % n];
+      const x = cx + r*Math.cos(a), y = cy + r*Math.sin(a);
+      const tang = a + Math.PI/2;
+      for (let d = 0; d < 3; d++) {
+        const off = (d - 1) * w * 0.16;
+        ctx.save();
+        ctx.filter = `blur(${9 + d*3}px) saturate(${1.05 + 0.12*((i+d)%3)}) brightness(${0.92 + 0.08*((i+k+d)%3)})`;
+        ctx.globalAlpha = (k === 0 ? 0.5 : 0.4) - d*0.08;
+        ctx.translate(x + Math.cos(tang)*off, y + Math.sin(tang)*off);
+        const lean = ((i*37+k*11+d*5)%13-6) * Math.PI/180;
+        ctx.rotate(lean + (a + Math.PI/2 - Math.PI/2) * 0.22 * jitter);
+        ctx.drawImage(im, -w*0.62, -h*0.62, w*1.24, h*1.24);
+        ctx.restore();
+      }
+    }
+  }
+  ctx.restore();
+  paintGrain(cx, cy, r, Math.max(w, h));
+  // pass 2: sharp, soft elliptical edges
+  list.forEach((im, i) => {
+    const a = a0 + i * 2*Math.PI/n;
+    const x = cx + r*Math.cos(a), y = cy + r*Math.sin(a);
+    const m = soft(im, Math.round(w*2), Math.round(h*2), 0.97);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(((i*37)%17-8) * Math.PI/180 * jitter);
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 12; ctx.shadowOffsetY = 6;
+    ctx.drawImage(m, -w/2, -h/2, w, h);
+    ctx.restore();
+  });
+  ringSpecular(cx, cy, r, Math.max(w,h));
+}
+
+function bracket(x, y, w, h, handles) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 2;
+  const t = 16;
+  [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]].forEach(([px,py,sx,sy])=>{
+    ctx.beginPath();
+    ctx.moveTo(px + sx*t, py); ctx.lineTo(px, py); ctx.lineTo(px, py + sy*t);
+    ctx.stroke();
+  });
+  if (handles) {
+    ctx.fillStyle = '#fff';
+    [[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([px,py])=>{
+      ctx.fillRect(px-7, py-7, 14, 14);
+    });
+  }
+}
+
+function icon(x, y, kind) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+  ctx.save(); ctx.translate(x, y);
+  ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI*2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  if (kind === 'layers') {
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-11, i*7); ctx.lineTo(0, i*7-6); ctx.lineTo(11, i*7); ctx.lineTo(0, i*7+6);
+      ctx.closePath(); ctx.stroke();
+    }
+  } else if (kind === 'eyeoff') {
+    ctx.beginPath(); ctx.ellipse(0, 0, 12, 7, 0, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-13, 11); ctx.lineTo(13, -11); ctx.stroke();
+  } else if (kind === 'dice') {
+    ctx.strokeRect(-10, -10, 20, 20);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    [[-5,-5],[5,5],[5,-5],[-5,5],[0,0]].forEach(([a,b])=>{ctx.beginPath();ctx.arc(a,b,1.8,0,7);ctx.fill();});
+  } else if (kind === 'tri') {
+    ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(11, 8); ctx.lineTo(-11, 8);
+    ctx.closePath(); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function polyHand(pts) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  pts.forEach(([x,y],i)=> i ? ctx.lineTo(x,y) : ctx.moveTo(x,y));
+  ctx.stroke();
+}
+
+function draw() {
+  // simulated camera backdrop (stand-in for live selfie feed)
+  const g = ctx.createRadialGradient(W/2, H*0.42, 80, W/2, H*0.42, H*0.75);
+  g.addColorStop(0, '#26303f'); g.addColorStop(1, '#0a0e16');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,0.035)'; ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 60) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 60) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  // abstract face + shoulders (placeholder for the user's face)
+  ctx.strokeStyle = 'rgba(255,255,255,0.32)'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.ellipse(450, 640, 170, 225, 0, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(390, 850); ctx.quadraticCurveTo(280, 950, 130, 1140);
+  ctx.moveTo(510, 850); ctx.quadraticCurveTo(620, 950, 770, 1140);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.beginPath(); ctx.moveTo(340, 585); ctx.lineTo(560, 585); ctx.stroke();
+
+  // face mesh dots hint
+  ctx.fillStyle = 'rgba(255,255,255,0.28)';
+  for (let r = 0; r < 7; r++) for (let c = 0; c < 7; c++) {
+    const th = (r/6)*Math.PI - Math.PI/2, ph = (c/6)*Math.PI - Math.PI/2;
+    const x = 450 + 150*Math.cos(th)*Math.sin(ph);
+    const y = 620 + 200*Math.sin(th);
+    ctx.beginPath(); ctx.arc(x, y, 1.6, 0, 7); ctx.fill();
+  }
+
+  // ==== applied features on the face (the payoff state) ====
+  const ap = (im, x, y, w, h) => {
+    const m = soft(im, Math.round(w*2), Math.round(h*2), 0.93);
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 10;
+    ctx.drawImage(m, x - w/2, y - h/2, w, h);
+    ctx.restore();
+  };
+
+  // ==== three dials (blue=nose upper-left, green=eye right, red=mouth bottom) ====
+  dial(imgs.nose,  252, 425, 218, 82, 143, -Math.PI/2.3, 1);
+  dial(imgs.eye,   680, 705, 182, 106, 46,  -Math.PI/2,   1);
+  dial(imgs.mouth, 450, 1072, 196, 112, 49, -Math.PI/2 + 0.35, 1);
+
+  ap(imgs.eye[1],   528, 585, 150, 66);
+  ap(imgs.nose[3],  450, 690, 104, 182);
+  ap(imgs.mouth[2], 450, 822, 150, 66);
+
+  // ==== HUD brackets ====
+  bracket(438, 545, 180, 84, false);
+  bracket(340, 610, 260, 268, true);
+
+  // ==== geometric polyline hand (gesture hint, right side) ====
+  polyHand([[730,1210],[670,1160],[706,1120],[760,1168],[730,1210],[790,1260],[830,1210],[760,1168]]);
+  polyHand([[670,1160],[642,1190],[670,1235],[730,1210]]);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '15px monospace';
+  ctx.fillText('45°', 808, 1196);
+
+  // ==== glass pill sidebar ====
+  ctx.save();
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth = 1.5;
+  const sx = 42, sy = 470, sw = 84, sh = 560;
+  ctx.beginPath(); ctx.roundRect(sx, sy, sw, sh, 42); ctx.fill(); ctx.stroke();
+  icon(sx+sw/2, sy+70,  'layers');
+  icon(sx+sw/2, sy+160, 'eyeoff');
+  icon(sx+sw/2, sy+250, 'dice');
+  icon(sx+sw/2, sy+340, 'tri');
+  // SAT slider
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(sx+sw/2, sy+400); ctx.lineTo(sx+sw/2, sy+510); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(sx+sw/2, sy+445, 9, 0, 7); ctx.fill();
+  ctx.font = '11px monospace'; ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.save(); ctx.translate(sx+sw/2+24, sy+500); ctx.rotate(-Math.PI/2);
+  ctx.fillText('SATURATION', 0, 0); ctx.restore();
+  ctx.restore();
+
+  // ==== shutter ====
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(450, 1460, 56, 0, Math.PI*2); ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(450, 1460, 44, 0, Math.PI*2); ctx.fill();
+
+  // scanline vibe
+  ctx.fillStyle = 'rgba(255,255,255,0.012)';
+  for (let y = 0; y < H; y += 6) ctx.fillRect(0, y, W, 2);
+}
+</script>
+</body>
+</html>

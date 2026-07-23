@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* zh keeps Latin/digits in Inter / JetBrains and lets CJK glyphs fall through
+   to a system Chinese face (no bundled CJK package). Font fallback resolves
+   per-glyph, so mixed lines (e.g. "眼：Mona Lisa") render each script well. */
+html[lang="zh"] {
+  --font-sans: "Inter", -apple-system, "PingFang SC", "Microsoft YaHei",
+    "Noto Sans CJK SC", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "PingFang SC", "Microsoft YaHei",
+    "Noto Sans CJK SC", monospace;
+}
+
+/* No page scroll ever; the world lives on the full-bleed canvas. */
+html,
+body {
+  overflow: hidden;
+  height: 100%;
+  overscroll-behavior: none;
+  background: #000;
+}
+
+/* Safe-area insets, calibrated by Harden against the platform shell contract
+   (safe-area.md). The shell is unreachable on this account (its template repo
+   404s — build-report note #7), so these compose the same numbers by hand and
+   keep every band overridable by the real --waku-* / --sys-* vars if a host
+   ever injects them.
+     TOP    zoneC_top    = max(env-top, --sys-top, --gallery-safe-area-top)
+                          + top-chrome (WAKU top nav band, 56) + 16 breathe.
+            The notch inset IS added to the top nav band.
+     BOTTOM zoneC_bottom = screenH - (bottom-nav 60 + bottom-margin 22) = -82.
+            Flat 82 per the reference — "no extra safeAreaBottom": the host
+            bottom nav already clears the home indicator, so env/​sys bottom is
+            NOT added again. This lifts the shutter (Build placed it at 26px,
+            pre-shell) above the host bottom nav — a safe-area calibration, not
+            a change to the ratified bottom-centre shutter design. */
+:root {
+  --surgery-safe-top: max(env(safe-area-inset-top, 0px), var(--sys-top, 0px), var(--gallery-safe-area-top, 0px));
+  --surgery-top-chrome: var(--waku-top-nav-band, 56px);
+  --surgery-bottom-nav: var(--waku-bottom-nav, 60px);
+  --surgery-bottom-margin: var(--waku-bottom-margin, 22px);
+  --surgery-breathe: 16px; /* Zone C-safe margin (safe-area.md) */
+  --surgery-topbar-inset: calc(var(--surgery-safe-top) + var(--surgery-top-chrome) + var(--surgery-breathe));
+  --surgery-shutter-inset: calc(var(--surgery-bottom-nav) + var(--surgery-bottom-margin));
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.35s ease-out both;
+}
+
+@keyframes card-slide {
+  from {
+    transform: translateY(64px) rotate(2deg) scale(0.94);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) rotate(-1deg) scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-card-slide {
+  animation: card-slide 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
