@@ -17,6 +17,14 @@
 > 分割人像，嘴环前景胸口带、鼻/眼人后）、重影根除（背景不再来自
 > 摄像头）、boot 超时兜底、FPS/帧耗计数器内置。各轮 done 文件与
 > build-report 修订段齐备（fix-03/04/04b/05/06-done.md）。
+>
+> **fix-14 已完成**（post-release 维护：壳内快门不出卡）：根因 =
+> 平台壳注入跨域 `<base>` 致贴图污染 canvas、`toDataURL` 抛
+> SecurityError 静默断流；修法 = 部件/背景图两处加
+> `crossOrigin='anonymous'`（GCS ACAO:\*，同源 no-op）。真壳复现 +
+> 单端口双源机制孪生前后对照 + probe-fix07 全量回归 0 失败。新
+> `dist/`（入口 `index-CMZR0o1x.js`）待 Release 维护路径重新上传。
+> 详见 `fix-14-done.md` 与 build-report "修订 fix-14" 段。
 
 - 做了什么：把源项目改造成完整可玩的竖屏 playable——前置相机镜像
   打底，三个**玻璃盘**（细管甜甜圈、锐高光、透背景折射、3D 倾斜、

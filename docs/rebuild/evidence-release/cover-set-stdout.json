@@ -1,0 +1,27 @@
+{
+  "target_kind": "content",
+  "project_id": "b085697a-e5c1-5277-a6f0-63f4931ef930",
+  "content_id": "cnt_59ff337c85c24d4a92f3b29344cb7a98",
+  "uploaded_asset": {
+    "id": "uas_c7635a2f40f04d2baf232457412f8787",
+    "filename": "cover-surgery.jpg",
+    "mime_type": "image/jpeg",
+    "size_bytes": 266957,
+    "public_url": "https://storage.googleapis.com/waku-core-aicap-dev/uploads/usr_ec6440c6398747e8a60e4a162e44412f/4a19e95a9d1041a4b1c34c0a38723c1c/cover-surgery.jpg",
+    "created_at": "2026-07-23T07:39:28.655651Z"
+  },
+  "cover": {
+    "content_id": "cnt_59ff337c85c24d4a92f3b29344cb7a98",
+    "project_id": "b085697a-e5c1-5277-a6f0-63f4931ef930",
+    "cover_asset_id": "uas_c7635a2f40f04d2baf232457412f8787",
+    "source_asset_id": "uas_c7635a2f40f04d2baf232457412f8787",
+    "previous_content_version_id": "cnv_112239ad3bfc4f9487cce4772bc64b56",
+    "current_content_version_id": "cnv_5fcf72cca1054b5d91252dd835271eb0",
+    "needs_promote": false,
+    "active_release_seq": null,
+    "asset_was_copied": false
+  },
+  "cover_promotion": {
+    "status": "not_needed"
+  }
+}

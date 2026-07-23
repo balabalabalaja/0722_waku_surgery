@@ -312,6 +312,21 @@ Opus 4.8）。）
 （不发 Feed），pivoting-circles 同款路径。git 写授权仅限此上传路径，
 Muse Library 仍不动。
 
+## 第 42 轮（Feed 发布末端确认，2026-07-23）
+
+手机上试完没问题的话 发一下feed吧
+
+（conductor：视为玩家末端确认，解除 Feed 硬边界，令 Release 线程
+执行 `waku publish`（含封面 SOP），发布记录回写报告。）
+
+## 第 43 轮（上线后缺陷报告 fix-14，2026-07-23，截图已归档 gate-feedback-14-shell-shutter.png）
+
+我在playground点了拍摄怎么没有那个卡片生成，我之前测试的时候是有的
+
+（conductor：判定为平台壳内专属缺陷（本地无壳正常），开 post-release
+维护轮 fix-14——Build 修订修复 + waku simulator 取证，修完 Release
+维护路径重传。）
+
 ---
 
 ## 附件归档

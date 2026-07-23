@@ -27,6 +27,13 @@ export function partDefs(): PartDef[] {
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const im = new Image();
+    // fix-14: the platform shell proxies the playable but injects
+    // <base href="https://storage.googleapis.com/...">, so this relative src
+    // resolves cross-origin there. Loaded no-cors it would taint every canvas
+    // it touches and composeCard's toDataURL throws SecurityError (no snapshot
+    // card in-shell). GCS serves ACAO:*, and in every same-origin context
+    // (local dev, raw GCS, simulator proxy rewrite) the attribute is a no-op.
+    im.crossOrigin = 'anonymous';
     im.onload = () => resolve(im);
     im.onerror = () => reject(new Error(`failed to load ${src}`));
     im.src = src;

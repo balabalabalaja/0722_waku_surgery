@@ -1,0 +1,18 @@
+# live Playground verification — 2026-07-23T07:13:57Z
+launch_url: https://storage.googleapis.com/waku-core-aicap-dev/content-reviews/rvi_9e4226b9c1c5485f86dda7c245a86fd0/main/bbdc3591-5208efe478ff/index.html
+kind: review (Playground review artifact — NOT Feed)
+local dist file count: 33  (receipt file_count=33)
+--- live status ---
+200  text/html  index.html
+200  application/json  metadata.json
+200  text/javascript  vendor/polyverse-content-runtime.min.js
+200  text/javascript  assets/index-DYT-riUH.js
+200  text/css  assets/index-BGMQBU8E.css
+200  text/javascript  assets/vision_bundle-qr10_K4S.js
+200  image/webp  bg/background.webp
+200  image/png  parts/eye_03.png
+200  image/png  parts/nose_07.png
+200  image/png  parts/mouth_02.png
+--- sha256 live==local dist ---
+MATCH index.html 74771271e5e59d599d1478dfc13a0e299d55eec72e78d54d8d75449bc7fdc3fe
+MATCH metadata.json 1cbeb6f5fe46798322c01ea3e6c8f89d4eed7047a3baf96fae990b7fa797c719

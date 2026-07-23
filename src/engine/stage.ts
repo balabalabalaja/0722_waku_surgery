@@ -157,6 +157,10 @@ export class CollageEngine {
     this.rings = ringSpecs(this.anchors.box, this.viewW, this.viewH);
 
     this.bgImage = new Image();
+    // fix-14: same cross-origin story as parts.ts loadImage — the shell's
+    // injected <base> points this at GCS directly; anonymous CORS keeps the
+    // backdrop from tainting the capture canvas (toDataURL SecurityError).
+    this.bgImage.crossOrigin = 'anonymous';
     this.bgImage.onload = () => {
       this.bgReady = true;
     };

@@ -341,6 +341,21 @@ ui-previews/01–03 刷新 + probe-fix07 回归 0 失败。详见
 几何复验无溢出、居中 0 偏移；probe-fix07 回归 0 失败。详见
 `fix-13-done.md`。
 
+## 修订 fix-14（post-release：壳内快门不出快照卡）
+
+根因：平台壳代理加载 playable 时注入 `<base href="https://storage.googleapis.com/…/">`，
+运行时相对路径的部件贴图/背景解析为跨域 GCS、no-cors 画入 canvas 污染画布，
+`composeCard` 的 `toDataURL()` 抛 SecurityError → `RESOLVE_FAIL` 静默退回，
+永不出卡；本地/raw GCS 同源无此事，CLI simulator 的 bootstrap 把 GCS URL
+重写回同源代理也消掉了污染——三处"正常"与真壳"必现"全部对上。修法 =
+`parts.ts` `loadImage` 与 `stage.ts` `bgImage` 加 `crossOrigin='anonymous'`
+（GCS 全对象 ACAO:\*，同源场景 no-op；共 2 行生效代码，fix-01…13 零触碰）。
+取证 `evidence-build/fix-14/`：真壳复现（Playground manual preview 装 Feed
+GCS URL，SecurityError 逐字）+ 单端口 8891 双源（127.0.0.1 vs localhost）
+壳机制孪生——回退重建**逐位命中线上 hash** `index-DYT-riUH.js` 不出卡、
+修复版 `index-CMZR0o1x.js` 出卡；probe-fix07 全量回归双视口 failures=0，
+tsc 0 错 + 22 单测过。详见 `fix-14-done.md`。
+
 ## 给 Harden 的注记
 
 - 文案集中：`src/content.ts`（STR / CREDITS / AUDIO / SFX_DURATIONS），
