@@ -356,6 +356,26 @@ GCS URL，SecurityError 逐字）+ 单端口 8891 双源（127.0.0.1 vs localhos
 修复版 `index-CMZR0o1x.js` 出卡；probe-fix07 全量回归双视口 failures=0，
 tsc 0 错 + 22 单测过。详见 `fix-14-done.md`。
 
+## 修订 fix-15（post-release：真机转盘咔哒 SFX 缺失）
+
+根因：咔哒/落位声从 rAF 循环触发、永不在手势回调内，iOS 对 HTMLAudio
+的解锁**逐元素**——从未手势内 play 过的元素永远 `NotAllowedError`
+（BGM 有 pointerdown 重试、快门在点击回调内，所以只缺咔哒）；桌面
+Chrome 页面级 sticky 激活把它洗掉，本地测不出。修法 = SFX 切 WebAudio
+主路径（CDN ACAO:\* 实测已通，旧 CORS 注释过时）：boot 时 fetch+decode
+四 cue，常驻手势监听 `ctx.resume()`，每次触发新建 bufferSource
+（`start(0,0,dur)` 落时长上限，绕开 iOS `currentTime=0` 重播不可靠）；
+HTMLAudio 池降为回落并在首手势内静音祝福解锁。仅动
+`src/engine/audio.ts` 一文件，fix-01…14 零触碰。取证
+`evidence-build/fix-15/`：桌面孪生（`--autoplay-policy=
+user-gesture-required` + 触屏仿真 + init-script 自治驱动规避 Playwright
+evaluate 的 userGesture 激活泄漏 + 强制 suspend 复刻 iOS 开机态）四场景
+前后对照全 0 失败——before 两场景 Phase A click 全拒/Phase B 桌面放行
+（缺陷+掩蔽双证据），after 两场景 suspended 静默 → 一次触摸 resume →
+rAF 咔哒走 bufferSource、双盘急拨 burst 全新 source；probe-fix07 全量
+回归双视口 failures=0（65 断言），tsc 0 错 + 22 单测过。新 dist 入口
+`index-BOdIEah_.js`。真机一按验收留玩家。详见 `fix-15-done.md`。
+
 ## 给 Harden 的注记
 
 - 文案集中：`src/content.ts`（STR / CREDITS / AUDIO / SFX_DURATIONS），

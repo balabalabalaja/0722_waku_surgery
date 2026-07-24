@@ -132,6 +132,84 @@ playability 双重坐实（真机 + 字节全等），按 preflight「No third b
 
 ---
 
+## fix-14 重传（维护轮 · 2026-07-23 · Build 修订后 Release 重传）
+
+Build 修订 fix-14（壳内快门不出卡）后的维护重传。**根因**：平台壳注入
+`<base href=GCS>` 使部件贴图/油画背景跨域直连 GCS，no-cors 画入 canvas 污染画布，
+`composeCard` 的 `toDataURL()` 抛 `SecurityError` → `RESOLVE_FAIL`，真壳内永不出卡。
+**修法（Build，非本线程）**：`parts.ts loadImage()` + `stage.ts bgImage` 各加
+`crossOrigin='anonymous'`（GCS 全对象 `ACAO:*`，跨域 CORS 干净、同源 no-op），不触碰
+fix-01…13 任何视觉/机制（11 行插入，`fix-14-done.md`）。**本线程只重验 + 重传，产物
+代码零改。**
+
+### 发布前重验（本线程亲跑）
+
+- `npm run lint` exit 0；`npm test` **22/22**；`rm -rf dist && npm run build` **确定性
+  重建复现入口 bundle `index-CMZR0o1x.js`**（250.33 kB），dist 34 文件。
+- index.html 引用 `assets/index-CMZR0o1x.js`；构建 bundle 含 `anonymous` ×4（修复烧入）。
+- 凭据扫描新 dist：0 命中。
+
+### git（fix-14 提交 + push，授权沿玩家第 41 轮）
+
+```bash
+git add -A && git commit   # 8b34d5f "fix-14: shell shutter — crossOrigin='anonymous' …"
+git push origin main       # 1e3485f..8b34d5f
+```
+
+仅 `src/engine/parts.ts` + `src/engine/stage.ts` 源码改动（+ 流水线文档）。
+
+### Playground 重传（新 URL）
+
+`waku push ./dist --source-dir . --name "SURGERY"` → exit 0（后台跑避 2min 工具超时）：
+
+| 项 | 值 |
+|---|---|
+| **新 Playground URL** | `https://storage.googleapis.com/waku-core-aicap-dev/content-reviews/rvi_9e4226b9c1c5485f86dda7c245a86fd0/main/ba994b72-254965f02787/index.html` |
+| kind / review_item_id | `review` / `rvi_9e4226b9c1c5485f86dda7c245a86fd0`（同源→同 review item） |
+| artifact_id / source_revision | `rva_52d84b63c54f4db399c8e55c76b8dd1c` / `8b34d5f…`（fix-14 提交） |
+| artifact.sha256 / file_count | `254965f0…` / 34 |
+
+### Feed 重发（刷新版本；玩家第 42 轮 Feed 授权对 bug 修复重发继续有效；封面不动）
+
+`waku publish --project-id b085697a-… --name "SURGERY" --site-dir dist --source-dir .
+--description "<metadata.json 原文>"` → exit 0（后台跑）：
+
+| 项 | 值 |
+|---|---|
+| **新 Feed launch_url** | `https://storage.googleapis.com/waku-core-aicap-dev/sites/b085697a-e5c1-5277-a6f0-63f4931ef930/20260723T090516352941/index.html` |
+| content_id | `cnt_59ff337c85c24d4a92f3b29344cb7a98`（**不变——同项目、非重复卡**） |
+| **新 deployment_id（当前回滚坐标）** | `dep_8d6a0fbcea1e4bb7b7cc2c885419eb36`（feed_seq 3、is_current、succeeded） |
+| 前一版（保留可回滚） | `dep_816fe28d912b4a67939bda5b05ad34ca`（feed_seq 2、is_current=false） |
+| current_version_id | `cnv_34c4a357e2d24c089c2b4432ef4b745e` |
+| title / visibility | `SURGERY`（非 UUID）/ `public` |
+| published_at | `2026-07-23T07:38:49`（**冻结不变**——republish 原子切指针、Feed 位次不动） |
+
+- **用 `--project-id` 显式指向既有项目**——回执 `content_id` 与首发**逐字不变**，坐实
+  同项目新版本、**未产生重复/空卡**（守 Known Trap）。description 逐字节=源。
+
+### 重传后核验（命令输出为据，`evidence-release/fix14-verify.txt`）
+
+| 核验项 | 结果 |
+|---|---|
+| 新 bundle 在位 | 线上 index.html 引用 `assets/index-CMZR0o1x.js`；该 bundle 200 ✓ |
+| 旧 bundle 清除 | 新 deploy 上 `index-DYT-riUH.js` → **404**（干净替换）✓ |
+| crossOrigin 修复上线 | 线上 bundle 含 `anonymous` ×4 ✓ |
+| 资产全 200 | index/新 js/polyverse-meta/metadata/vendor/bg/part **全 200**，无 404 ✓ |
+| **线上字节=验讫 dist** | index.html `77628bfd…`、`index-CMZR0o1x.js` `fa5fb306…`、polyverse-meta/metadata **逐位全等** ✓ |
+| 版本链 | `waku versions`：2 条 deployment，新版 succeeded/is_current、旧版保留可回滚 ✓ |
+| 封面不动 | cover asset `uas_c7635a2f…` 仍 200 image/jpeg，content 级绑定（content_id 不变），**未 re-set** ✓ |
+| publication_status | `waku ls`：published ✓ |
+
+**未重跑第三遍浏览器**：新 dist 与确定性重建逐位同一、线上 sha256 全等、9 资产全 200、
+旧 bundle 404 干净替换、crossOrigin 修复实测在线上 bundle。fix-14 真壳验收由 Build
+壳机制孪生实测出卡（`evidence-build/fix-14/`）；线上真壳一键验收留玩家/后续（Playground
+manual preview 装新 GCS URL 点快门应出卡）。
+
+> **当前版本坐标以本段为准**：上文「Feed 发布」段记录的 `dep_816fe28d…` 已被本轮
+> `dep_8d6a0fbc…` 取代为 is_current；旧版保留仅作回滚。Playground 亦以本段新 URL 为准。
+
+---
+
 ## 1. Preflight（发布前重验，非信任上游自陈）
 
 | 检查 | 命令 / 方法 | 结果 |

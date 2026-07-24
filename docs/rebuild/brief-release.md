@@ -1,12 +1,15 @@
 # brief-release — Surgery
 
-- **状态：已上 Playground + 已正式发布 Feed，交付完成。** Surgery（名画五官换脸镜子
-  玩具）经 Release 线程先上 Playground；玩家第 42 轮真机试玩通过、亲口"发一下 feed"后，
-  执行 `waku publish` 正式发布 + `waku cover set` 封面，`publication_status: published`、
-  版本 succeeded/is_current。
-- **Feed URL**：`https://storage.googleapis.com/waku-core-aicap-dev/sites/b085697a-e5c1-5277-a6f0-63f4931ef930/20260723T073842219277/index.html`
-  （content_id `cnt_59ff337c85c24d4a92f3b29344cb7a98`；封面 `uas_c7635a2f…`，prod 生效）
-- **Playground URL**：`https://storage.googleapis.com/waku-core-aicap-dev/content-reviews/rvi_9e4226b9c1c5485f86dda7c245a86fd0/main/bbdc3591-5208efe478ff/index.html`
+- **状态：已上 Playground + 已正式发布 Feed + fix-14 维护重传完成，交付完成。** Surgery
+  （名画五官换脸镜子玩具）经 Release 先上 Playground；玩家第 42 轮真机确认后 `waku publish`
+  正式发布 + `waku cover set` 封面。随后 Build 修订 fix-14（壳内快门 tainted-canvas
+  不出卡），本线程重验 + 重传：`waku push` 新 Playground + `waku publish --project-id`
+  刷新 Feed 版本（content_id 不变、非重复卡；封面不动），`publication_status: published`、
+  新版 succeeded/is_current。
+- **Feed URL（fix-14 当前版）**：`https://storage.googleapis.com/waku-core-aicap-dev/sites/b085697a-e5c1-5277-a6f0-63f4931ef930/20260723T090516352941/index.html`
+  （content_id `cnt_59ff337c85c24d4a92f3b29344cb7a98`；deployment `dep_8d6a0fbc…` is_current；
+  封面 `uas_c7635a2f…` prod 生效）
+- **Playground URL（fix-14 当前版）**：`https://storage.googleapis.com/waku-core-aicap-dev/content-reviews/rvi_9e4226b9c1c5485f86dda7c245a86fd0/main/ba994b72-254965f02787/index.html`
 - **过程**：首轮 Preflight 判定产物 ship-ready（lint 0 / test 22-22 / build 出
   dist@root / 凭据 0 命中 / 资产全 200），但唯一合规上传路径缺失——`waku push` 强制
   git+GitHub origin，而本项目非 git 仓；写了 handback。**玩家第 41 轮裁定选项 1**：

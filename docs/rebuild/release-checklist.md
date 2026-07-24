@@ -69,6 +69,20 @@ date: 2026-07-23 ｜ thread: waku-release ｜ CLI waku 0.4.5 ｜ 环境: 生产
 - [x] 线上 Feed `index.html`/`polyverse-meta.json`/`metadata.json` 与本地 dist sha256 逐位全等
 - [x] 未重跑第三遍浏览器（玩家真机已确认 + 字节全等，playability 双重坐实）
 
+## 维护重传 — fix-14（壳内快门 tainted-canvas 修复，Build 修订后 Release 重传）
+
+- [x] 核验 fix-14 改动范围 = 仅 `parts.ts`+`stage.ts` 各加 `crossOrigin='anonymous'`（11 行，无 fix-01..13 视觉/机制改动）；本线程产物代码零改
+- [x] 发布前重验：`lint` 0 / `test` 22-22 / 确定性重建复现入口 bundle `index-CMZR0o1x.js`（dist 34 文件）；bundle 含 `anonymous`×4；新 dist 凭据 0 命中
+- [x] git commit `8b34d5f`（信息注明 fix-14 壳内快门修复）+ `git push origin main`（授权沿玩家第 41 轮）
+- [x] `waku push ./dist --source-dir . --name "SURGERY"` exit 0 → 新 Playground URL（rva_52d84b63…, src_rev 8b34d5f, 34 文件）
+- [x] `waku publish --project-id b085697a-… --name "SURGERY" --site-dir dist --source-dir . --description "<源>"` exit 0 → 刷新 Feed 版本
+- [x] content_id 不变（`cnt_59ff337c…`）= 同项目新版本、非重复/空卡；title `SURGERY` 非 UUID；description 逐字节=源
+- [x] `waku versions`：新 `dep_8d6a0fbc…`（feed_seq3, succeeded, is_current）+ 旧 `dep_816fe28d…` 保留可回滚
+- [x] 线上新 Feed：index.html 引用 `index-CMZR0o1x.js`；旧 `index-DYT-riUH.js`→404（干净替换）；bundle 含 `anonymous`×4（修复上线）
+- [x] 线上资产全 200；`index.html`/`index-CMZR0o1x.js`/`polyverse-meta.json`/`metadata.json` sha256 与本地 dist 逐位全等
+- [x] 封面不动：cover `uas_c7635a2f…` 仍 200 image/jpeg，content 级绑定（content_id 不变），未 re-set
+- [x] Muse Library 仍一字节未动；产物代码不再改
+
 ## Archive（Muse Library）
 
 - [x] 按派工书 Archive 专项 + 玩家第 41 轮：跳过 Muse Library git push

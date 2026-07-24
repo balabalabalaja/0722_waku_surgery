@@ -1,0 +1,28 @@
+{
+  "versions": [
+    {
+      "deployment_id": "dep_8d6a0fbcea1e4bb7b7cc2c885419eb36",
+      "kind": "publish",
+      "commit_sha": "05be29919116d13e8ec72407fb7282123c4f7d32",
+      "status": "succeeded",
+      "deployment_url": "https://storage.googleapis.com/waku-core-aicap-dev/sites/b085697a-e5c1-5277-a6f0-63f4931ef930/20260723T090516352941/index.html",
+      "created_at": "2026-07-23T09:05:24.742078+00:00",
+      "has_source_zip": true,
+      "is_current": true,
+      "source": "waku_cli_direct",
+      "feed_sequence": 3
+    },
+    {
+      "deployment_id": "dep_816fe28d912b4a67939bda5b05ad34ca",
+      "kind": "publish",
+      "commit_sha": "4eab3bc5eb21b0bf9228ac4a7315694e2dbe2b50",
+      "status": "succeeded",
+      "deployment_url": "https://storage.googleapis.com/waku-core-aicap-dev/sites/b085697a-e5c1-5277-a6f0-63f4931ef930/20260723T073842219277/index.html",
+      "created_at": "2026-07-23T07:38:49.285874+00:00",
+      "has_source_zip": true,
+      "is_current": false,
+      "source": "waku_cli_direct",
+      "feed_sequence": 2
+    }
+  ]
+}

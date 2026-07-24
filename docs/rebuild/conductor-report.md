@@ -74,6 +74,17 @@ Create 门禁 grep 全过零确认进 Build；Build 完工门禁两次验收
 嘴环头顶方案因玩家更正回退（fix-04b）；Harden 门禁三报告全绿零确认
 进 Release；Release git 授权仅限上传路径。
 
+## 维护轮 fix-14（上线后，2026-07-23）
+
+玩家真机 Playground 实测：壳内点快门不出卡（本地无壳正常）。
+根因：平台壳注入 `<base href=GCS>` → 素材跨域污染 canvas →
+`toDataURL()` 抛 SecurityError 静默中断出卡；`waku simulator` 会把
+URL 重写回同源、恰好掩盖此缺陷（测试盲区已记录）。修法：两处
+`crossOrigin='anonymous'`（fix-14-done.md），全量回归 0 失败。
+重传：commit `8b34d5f` → 新 Playground URL（release-report
+「fix-14 重传」段）→ Feed 同项目刷新版本（content_id 不变、
+feed_seq 3 is_current，旧版 dep_816fe28d… 可回滚）。
+
 ## 维护指北（摘自 release-report）
 
 改码 → `npm run build` → push GitHub → 重跑 `waku push` 得新

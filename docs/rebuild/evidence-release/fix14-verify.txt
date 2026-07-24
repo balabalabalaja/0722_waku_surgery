@@ -1,0 +1,24 @@
+# fix-14 re-upload live verification — 2026-07-23T09:07:44Z
+git: commit 8b34d5f63172ad04d2592df3b795d883e4c78acc pushed to origin/main
+NEW Playground URL: https://storage.googleapis.com/waku-core-aicap-dev/content-reviews/rvi_9e4226b9c1c5485f86dda7c245a86fd0/main/ba994b72-254965f02787/index.html (kind=review, rva_52d84b63…, src_rev 8b34d5f, sha256 254965f0…, 34 files)
+NEW Feed launch_url: https://storage.googleapis.com/waku-core-aicap-dev/sites/b085697a-e5c1-5277-a6f0-63f4931ef930/20260723T090516352941/index.html
+Feed content_id: cnt_59ff337c85c24d4a92f3b29344cb7a98 (UNCHANGED — same project, not a duplicate)
+Feed NEW deployment_id: dep_8d6a0fbcea1e4bb7b7cc2c885419eb36 (feed_seq 3, is_current, succeeded)
+Feed PREV deployment_id: dep_816fe28d912b4a67939bda5b05ad34ca (feed_seq 2, is_current=false — rollback target)
+cover: uas_c7635a2f40f04d2baf232457412f8787 unchanged (200 image/jpeg), content-level binding, not re-set (封面不动)
+index.html references: assets/index-CMZR0o1x.js
+old bundle index-DYT-riUH.js on new deploy: 404 (expect 404)
+anonymous (crossOrigin fix) in live bundle: 4
+--- live asset status ---
+200 text/html index.html
+200 text/javascript assets/index-CMZR0o1x.js
+200 application/json polyverse-meta.json
+200 application/json metadata.json
+200 text/javascript vendor/polyverse-content-runtime.min.js
+200 image/webp bg/background.webp
+200 image/png parts/nose_07.png
+--- sha256 live == local dist ---
+MATCH index.html 77628bfd6dac157158842150004447a7f34b711affa67bc8b1cf3f56b5964299
+MATCH assets/index-CMZR0o1x.js fa5fb3068c981ad54d6f6b0659a4826c7b33b157457f62d7f0aa002308c35d4f
+MATCH polyverse-meta.json 4eda52f71e1992581e5f98b4e1bf6c486391c493890c3f2d14a2057213632c87
+MATCH metadata.json 1cbeb6f5fe46798322c01ea3e6c8f89d4eed7047a3baf96fae990b7fa797c719

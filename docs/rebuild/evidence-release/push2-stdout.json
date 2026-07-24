@@ -1,0 +1,34 @@
+{
+  "kind": "review",
+  "review_item_id": "rvi_9e4226b9c1c5485f86dda7c245a86fd0",
+  "source_repo_url": "https://github.com/balabalabalaja/0722_waku_surgery.git",
+  "source_path": ".",
+  "source_branch": "main",
+  "channels": [],
+  "content_tags": [],
+  "artifact": {
+    "id": "rva_52d84b63c54f4db399c8e55c76b8dd1c",
+    "review_item_id": "rvi_9e4226b9c1c5485f86dda7c245a86fd0",
+    "source_branch": "main",
+    "source_revision": "8b34d5f63172ad04d2592df3b795d883e4c78acc",
+    "source_fingerprint": null,
+    "sha256": "254965f027876e0ccf219a2cc3a14eb9152eca2d00364f4ecaad35fc155d7cbc",
+    "launch_url": "https://storage.googleapis.com/waku-core-aicap-dev/content-reviews/rvi_9e4226b9c1c5485f86dda7c245a86fd0/main/ba994b72-254965f02787/index.html",
+    "storage_uri": "https://storage.googleapis.com/waku-core-aicap-dev/content-reviews/rvi_9e4226b9c1c5485f86dda7c245a86fd0/main/ba994b72-254965f02787",
+    "source_uri": "https://storage.googleapis.com/waku-core-aicap-dev/content-reviews/rvi_9e4226b9c1c5485f86dda7c245a86fd0/main/ba994b72-254965f02787/source.zip",
+    "entrypoint": "index.html",
+    "build_spec": {},
+    "tags": [],
+    "created_by_user_id": "usr_ec6440c6398747e8a60e4a162e44412f",
+    "metadata": {
+      "upload_id": "ba994b72-f315-4e6b-9cb5-3fbb1e37be9a",
+      "file_count": 34,
+      "bundle_meta": {
+        "title": "SURGERY",
+        "description": "Live-camera art-history face collage: three dials of masterpiece eyes, noses and mouths orbit your head — spin them to remix your face, then snap a polaroid card with the painting credits."
+      }
+    },
+    "created_at": "2026-07-23T08:58:20.966915Z",
+    "updated_at": "2026-07-23T08:58:20.966915Z"
+  }
+}

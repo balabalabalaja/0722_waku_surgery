@@ -25,6 +25,15 @@
 > 单端口双源机制孪生前后对照 + probe-fix07 全量回归 0 失败。新
 > `dist/`（入口 `index-CMZR0o1x.js`）待 Release 维护路径重新上传。
 > 详见 `fix-14-done.md` 与 build-report "修订 fix-14" 段。
+>
+> **fix-15 已完成**（post-release 维护：真机转盘咔哒 SFX 缺失）：根因
+> = 咔哒从 rAF 触发、永不在手势内，iOS 逐元素解锁令其永久
+> NotAllowedError（BGM/快门各有手势路径所以听得到）；修法 = SFX 切
+> WebAudio 主路径（手势内 resume + 每次新建 bufferSource），HTMLAudio
+> 池降为回落并首手势祝福解锁，仅动 `src/engine/audio.ts`。桌面孪生
+> 四场景前后对照 + probe-fix07 回归双视口 0 失败。新 `dist/`（入口
+> `index-BOdIEah_.js`）待 Release 维护路径重新上传；真机一按验收留
+> 玩家。详见 `fix-15-done.md` 与 build-report "修订 fix-15" 段。
 
 - 做了什么：把源项目改造成完整可玩的竖屏 playable——前置相机镜像
   打底，三个**玻璃盘**（细管甜甜圈、锐高光、透背景折射、3D 倾斜、
