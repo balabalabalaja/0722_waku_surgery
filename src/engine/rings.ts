@@ -7,8 +7,14 @@
 //   clip) and a soft OFF-CANVAS drop shadow — no grey smoke stroke on the
 //   canvas (that was the "cheap" look);
 // - 3D tilt with front/back: back arc parts/edges live in the under-pass so
-//   the head occluder can cut them (top ring passes behind the head);
-// - oil-paint feel only in the part-to-part melt copies along the ring path.
+//   the head occluder can cut them (top ring passes behind the head).
+//
+// 2026-08-10 player call: the oil-paint "melt" copies between slots are GONE.
+// Pre-blurred sprites smeared along the ring path at low alpha read as cheap
+// haze floating over the backdrop, not as paint. Everything the dial draws is
+// now crisp by construction — the glass sells itself on edges and refraction,
+// not on blur. The per-part white sheen ellipse went with them for the same
+// reason. Do not reintroduce either.
 
 import type {PartKind, RingSpec} from '../types';
 import {angleForSlot, selectedIndex, slotAngle, stepDial, type DialSim} from './dialmath';
@@ -45,7 +51,6 @@ export const depthBrightness = (depth: number) =>
 export class Dial {
   kind: PartKind;
   parts: HTMLCanvasElement[];
-  private blurred: HTMLCanvasElement[]; // pre-blurred smear sprites
   n: number;
   sim: DialSim = {angle: 0, velocity: 0};
   idle = true; // slow auto-rotation until first touch of this dial
@@ -54,7 +59,6 @@ export class Dial {
     this.kind = kind;
     this.parts = parts;
     this.n = parts.length;
-    this.blurred = parts.map((p, i) => preblur(p, ((i * 53) % 17) - 8));
   }
 
   get selected(): number {
@@ -182,51 +186,7 @@ export class Dial {
       ctx.shadowOffsetY = 3;
     }
     ctx.drawImage(this.parts[i], -w / 2, -h / 2, w, h);
-    // Embedded-in-glass sheen.
-    const sheen = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
-    sheen.addColorStop(0, `rgba(255,255,255,${0.15 * bright})`);
-    sheen.addColorStop(0.45, 'rgba(255,255,255,0)');
-    sheen.addColorStop(1, `rgba(255,255,255,${0.05 * bright})`);
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = sheen;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, Math.PI * 2);
-    ctx.fill();
     ctx.restore();
-  }
-
-  // Oil-paint melt copies between slots i and i+1, clipped to a depth range.
-  private drawSmears(
-    ctx: CanvasRenderingContext2D,
-    spec: RingSpec,
-    now: number,
-    backPass: boolean,
-  ) {
-    const p = this.partSize(spec.r);
-    const SMEAR_STEPS = 4;
-    for (let i = 0; i < this.n; i++) {
-      const a1 = slotAngle(i, this.n) + this.sim.angle;
-      const a2 = slotAngle(i + 1, this.n) + this.sim.angle;
-      for (let k = 1; k <= SMEAR_STEPS; k++) {
-        const t = k / (SMEAR_STEPS + 1);
-        const a = a1 + (a2 - a1) * t;
-        const pos = this.worldFromLocal(spec, a);
-        const inBack = pos.depth <= BACK_CUT;
-        if (inBack !== backPass) continue;
-        const bright = depthBrightness(pos.depth);
-        const im = t < 0.5 ? this.blurred[i] : this.blurred[(i + 1) % this.n];
-        const bell = Math.max(0, 1 - Math.abs(t - 0.5) * 1.4);
-        const scale = 0.78 + 0.3 * ((pos.depth + 1) / 2);
-        ctx.save();
-        ctx.globalAlpha = 0.32 * bright * bell;
-        ctx.translate(pos.x, pos.y);
-        const tangent = this.tangentAngle(spec, a);
-        ctx.rotate(tangent);
-        ctx.scale(1.4 * scale, 0.72 * scale);
-        ctx.drawImage(im, (-p.w * 0.95) / 2, (-p.h * 0.95) / 2, p.w * 0.95, p.h * 0.95);
-        ctx.restore();
-      }
-    }
   }
 
   // Crisp tube edges over an arc range, with a dark under-shadow so white
@@ -277,12 +237,12 @@ export class Dial {
       ctx.save();
       this.tubeClip(ctx, spec, tube);
       drawRefraction();
-      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
       ctx.fillRect(spec.cx - spec.r - tube, spec.cy - spec.r - tube, (spec.r + tube) * 2, (spec.r + tube) * 2);
       const sheen = ctx.createLinearGradient(0, spec.cy - spec.r * this.tilt.squash - tube, 0, spec.cy + spec.r * this.tilt.squash + tube);
-      sheen.addColorStop(0, 'rgba(255,255,255,0.2)');
+      sheen.addColorStop(0, 'rgba(255,255,255,0.22)');
       sheen.addColorStop(0.45, 'rgba(255,255,255,0.02)');
-      sheen.addColorStop(1, 'rgba(255,255,255,0.1)');
+      sheen.addColorStop(1, 'rgba(255,255,255,0.12)');
       ctx.fillStyle = sheen;
       ctx.fillRect(spec.cx - spec.r - tube, spec.cy - spec.r - tube, (spec.r + tube) * 2, (spec.r + tube) * 2);
       ctx.restore();
@@ -297,13 +257,12 @@ export class Dial {
     }
 
     // Full-circle crisp edges (complete donut silhouette, gate item 1).
-    this.edgeStroke(ctx, spec, spec.r + tube, 0, Math.PI * 2, 0.55, 1.4);
-    this.edgeStroke(ctx, spec, Math.max(1, spec.r - tube), 0, Math.PI * 2, 0.35, 1);
+    this.edgeStroke(ctx, spec, spec.r + tube, 0, Math.PI * 2, 0.6, 1.6);
+    this.edgeStroke(ctx, spec, Math.max(1, spec.r - tube), 0, Math.PI * 2, 0.38, 1.2);
     // Back-arc specular ridge (light upper-left) — occludable.
-    this.edgeStroke(ctx, spec, spec.r + tube, -Math.PI * 0.86, -Math.PI * 0.3, 0.95, 2);
+    this.edgeStroke(ctx, spec, spec.r + tube, -Math.PI * 0.86, -Math.PI * 0.3, 0.95, 2.4);
 
-    // Back parts + melt (behind the head for the occluded ring).
-    this.drawSmears(ctx, spec, now, true);
+    // Back parts (behind the head for the occluded ring).
     const {back} = this.slotsByDepth(spec);
     for (const s of back) this.drawPart(ctx, spec, s.i, s.pos, now);
   }
@@ -319,25 +278,7 @@ export class Dial {
     this.edgeStroke(ctx, spec, spec.r + tube, Math.PI * 0.42, Math.PI * 0.5, 0.95, 3);
     this.edgeStroke(ctx, spec, spec.r + tube, Math.PI * 0.56, Math.PI * 0.585, 0.8, 2.4);
 
-    this.drawSmears(ctx, spec, now, false);
     const {front} = this.slotsByDepth(spec);
     for (const s of front) this.drawPart(ctx, spec, s.i, s.pos, now);
   }
-
-  private tangentAngle(spec: RingSpec, a: number): number {
-    const p1 = this.worldFromLocal(spec, a - 0.02);
-    const p2 = this.worldFromLocal(spec, a + 0.02);
-    return Math.atan2(p2.y - p1.y, p2.x - p1.x);
-  }
-}
-
-// Pre-blur + hue-jitter a sprite at half resolution (build-time cost only).
-function preblur(src: HTMLCanvasElement, hueDeg: number): HTMLCanvasElement {
-  const c = document.createElement('canvas');
-  c.width = Math.max(1, Math.round(src.width / 2));
-  c.height = Math.max(1, Math.round(src.height / 2));
-  const ctx = c.getContext('2d')!;
-  ctx.filter = `blur(${Math.max(6, c.width * 0.06)}px) hue-rotate(${hueDeg}deg) saturate(112%)`;
-  ctx.drawImage(src, 0, 0, c.width, c.height);
-  return c;
 }

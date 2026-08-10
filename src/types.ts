@@ -19,10 +19,12 @@ export interface PartFit {
 // Which sprite index is applied per kind; null = bare.
 export type Selection = Record<PartKind, number | null>;
 
+// Internal render flags. Both stay ON for the player — the tuning bar that
+// used to toggle them is gone; `showHud` is still switched off internally for
+// the polaroid capture pass.
 export interface HudConfig {
   showHud: boolean;      // mesh dots + brackets + hand wireframe
-  showOverlay: boolean;  // masterpiece parts on the face (off = bare-face compare)
-  saturation: number;    // 0..200, percent
+  showOverlay: boolean;  // masterpiece parts on the face
 }
 
 export interface Anchor {

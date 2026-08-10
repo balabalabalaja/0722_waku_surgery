@@ -1,16 +1,12 @@
 // Single source of all user-visible copy. Canvas-drawn text reads from here
-// too. Build shipped English only; Harden added the `zh` layer + resolution.
+// too.
 //
-// Localization model (no shell i18n available — see src/i18n.ts): the active
-// locale is resolved ONCE at module load from the device language and there is
-// no switch. `STR` / `CREDITS` are exported already resolved, so every call
-// site keeps `import {STR, CREDITS}` unchanged; the `_EN` / `_ZH` tables are
-// also exported for coverage tests. Cultural transfer, not literal translation:
-// museum-label register in both languages, standard Chinese art-historical
-// titles/artist names, and the SURGERY wordmark is a brand signature left
-// untranslated (it is only a project name — zero medical semantics, per brief).
-
-import {LOCALE} from './i18n';
+// ENGLISH ONLY — standing player rule. There is no locale layer, no zh table
+// and no language switch: every string a player can ever see is written here
+// in English and shipped verbatim. The former `zh` tables, the device-locale
+// detector (src/i18n.ts) and the CJK font fallbacks were removed wholesale;
+// do not reintroduce them. tests/content.test.ts fails the build on any
+// non-Latin character that creeps back into this file.
 
 const STR_EN = {
   bootTitle: 'SURGERY',
@@ -31,29 +27,8 @@ const STR_EN = {
   saved: 'Saved.',
 } as const;
 
-// zh: keeps the same witty museum-gallery register and information density,
-// rewritten so a Chinese user reads it naturally — not word-for-word.
-const STR_ZH: Record<keyof typeof STR_EN, string> = {
-  bootTitle: 'SURGERY', // brand wordmark — untranslated, no medical reading
-  bootLoading: '正在布展…',
-  bootCamera: '这面镜子需要用到你的摄像头',
-  fallbackNote: '没有摄像头 — 就在空白画布上作画',
-  cardLogo: 'SURGERY',
-  labelEye: '眼',
-  labelNose: '鼻',
-  labelMouth: '嘴',
-  bareCanvas: '素颜画布 — 你自己',
-  btnSave: '保存',
-  btnShare: '分享',
-  btnAgain: '再来一张',
-  shareCaption: '我的脸，被艺术史重新拼贴',
-  viewerUnavailable: '这里无法打开查看器。',
-  shareFailed: '评论编辑器没有打开。',
-  saved: '已保存。',
-};
-
-export {STR_EN, STR_ZH};
-export const STR: Record<keyof typeof STR_EN, string> = LOCALE === 'zh' ? STR_ZH : STR_EN;
+export {STR_EN};
+export const STR: Record<keyof typeof STR_EN, string> = STR_EN;
 
 export interface Credit {
   title: string;
@@ -97,58 +72,15 @@ export const CREDITS_EN: Record<'eye' | 'nose' | 'mouth', Credit[]> = {
   ],
 };
 
-// zh: standard Chinese art-historical titles and transliterated artist names
-// (the names Chinese museum-goers actually use) — same works, same order.
-export const CREDITS_ZH: Record<'eye' | 'nose' | 'mouth', Credit[]> = {
-  eye: [
-    {title: '《年轻男子肖像》', artist: '布龙齐诺'},
-    {title: '《戴红头巾的男子》', artist: '扬·凡·艾克'},
-    {title: '《自画像》', artist: '文森特·梵高'},
-    {title: '《两个圆圈前的自画像》', artist: '伦勃朗'},
-    {title: '《圣母子》', artist: '杜乔'},
-    {title: '《戴珍珠耳环的少女》', artist: '约翰内斯·维米尔'},
-    {title: '《自画像》', artist: '阿尔布雷希特·丢勒'},
-    {title: '《美国哥特式》', artist: '格兰特·伍德'},
-    {title: '《蒙娜丽莎》', artist: '列奥纳多·达·芬奇'},
-    {title: '《维纳斯的诞生》', artist: '桑德罗·波提切利'},
-  ],
-  nose: [
-    {title: '《手提歌利亚头颅的大卫》', artist: '卡拉瓦乔'},
-    {title: '《自画像（圣雷米）》', artist: '文森特·梵高'},
-    {title: '《色粉习作》', artist: '埃德加·德加'},
-    {title: '《巴尔达萨雷·卡斯蒂利奥内像》', artist: '拉斐尔'},
-    {title: '《戴眼镜的自画像》', artist: '夏尔丹'},
-    {title: '《倒牛奶的女仆》', artist: '约翰内斯·维米尔'},
-    {title: '《蒙娜丽莎》', artist: '列奥纳多·达·芬奇'},
-    {title: '《女子肖像》', artist: '罗希尔·凡·德尔·维登'},
-  ],
-  mouth: [
-    {title: '《自画像》', artist: '伦勃朗·凡·莱因'},
-    {title: '《美杜莎》', artist: '卡拉瓦乔'},
-    {title: '《维纳斯的诞生》', artist: '桑德罗·波提切利'},
-    {title: '《美国哥特式》', artist: '格兰特·伍德'},
-    {title: '《朵拉·玛尔肖像》', artist: '巴勃罗·毕加索'},
-    {title: '《戴珍珠耳环的少女》', artist: '约翰内斯·维米尔'},
-    {title: '《绿色条纹（马蒂斯夫人）》', artist: '亨利·马蒂斯'},
-    {title: '《自画像》', artist: '阿尔布雷希特·丢勒'},
-  ],
-};
+export const CREDITS: Record<'eye' | 'nose' | 'mouth', Credit[]> = CREDITS_EN;
 
-export const CREDITS: Record<'eye' | 'nose' | 'mouth', Credit[]> =
-  LOCALE === 'zh' ? CREDITS_ZH : CREDITS_EN;
-
-// Locale-aware label separator: half-width ": " for en, full-width "：" for zh.
-export const CREDIT_SEP: string = LOCALE === 'zh' ? '：' : ': ';
+export const CREDIT_SEP = ': ';
 
 // One shared helper for canvas font strings (typography rule: no scattered
-// per-call hardcoded font). Credits switch to a CJK sans stack under zh because
-// monospace faces carry no usable CJK glyphs; the SURGERY wordmark stays Latin
-// monospace in both locales.
+// per-call hardcoded font). Latin monospace throughout — the card never
+// carries a non-Latin glyph.
 export const CARD_FONT = {
-  credit: (px: number): string =>
-    LOCALE === 'zh'
-      ? `500 ${px}px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`
-      : `500 ${px}px "JetBrains Mono", ui-monospace, monospace`,
+  credit: (px: number): string => `500 ${px}px "JetBrains Mono", ui-monospace, monospace`,
   logo: (px: number): string => `700 ${px}px "JetBrains Mono", ui-monospace, monospace`,
 };
 

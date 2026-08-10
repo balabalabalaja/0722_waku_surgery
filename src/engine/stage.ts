@@ -119,7 +119,7 @@ export class CollageEngine {
   // fit = the white WINDOW (gate/fix-01 mechanic): scale/offset move the
   // viewing window; the painting itself stays anchored to the landmark.
   fits: Record<PartKind, PartFit> = defaultFits();
-  hud: HudConfig = {showHud: true, showOverlay: true, saturation: 100};
+  hud: HudConfig = {showHud: true, showOverlay: true};
 
   private dressed = false;
   private flights: Flight[] = [];
@@ -188,22 +188,6 @@ export class CollageEngine {
 
   setDressed(v: boolean) {
     this.dressed = v;
-  }
-
-  setSaturation(v: number) {
-    this.hud.saturation = v;
-    // CSS filter keeps the hot path cheap; white HUD lines are saturation-invariant.
-    this.canvas.style.filter = v === 100 ? '' : `saturate(${v}%)`;
-  }
-
-  toggleHud(): boolean {
-    this.hud.showHud = !this.hud.showHud;
-    return this.hud.showHud;
-  }
-
-  toggleOverlay(): boolean {
-    this.hud.showOverlay = !this.hud.showOverlay;
-    return this.hud.showOverlay;
   }
 
   resetBare() {
@@ -849,9 +833,9 @@ export class CollageEngine {
     }
   }
 
-  // Scene without HUD chrome, saturation baked in — the polaroid photo
-  // source. Rings stay in shot: they are scene furniture behind the person
-  // (fix-01 layering). faceBox is CSS px; scale converts to canvas pixels.
+  // Scene without HUD chrome — the polaroid photo source. Rings stay in shot:
+  // they are scene furniture behind the person (fix-01 layering). faceBox is
+  // CSS px; scale converts to canvas pixels.
   capture(): {canvas: HTMLCanvasElement; faceBox: FaceAnchors['box']; scale: number} {
     const off = document.createElement('canvas');
     const dpr = this.dpr;
@@ -859,7 +843,6 @@ export class CollageEngine {
     off.height = Math.round(this.viewH * dpr);
     const octx = off.getContext('2d')!;
     this.drawScene(octx, dpr, performance.now(), {hud: false, rings: true});
-    if (this.hud.saturation !== 100) applySaturation(octx, off.width, off.height, this.hud.saturation / 100);
     return {canvas: off, faceBox: {...this.anchors.box}, scale: dpr};
   }
 }
@@ -970,14 +953,3 @@ function easeOutBack(t: number): number {
   return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
 }
 
-function applySaturation(ctx: CanvasRenderingContext2D, w: number, h: number, s: number) {
-  const img = ctx.getImageData(0, 0, w, h);
-  const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const L = 0.213 * d[i] + 0.715 * d[i + 1] + 0.072 * d[i + 2];
-    d[i] = L + (d[i] - L) * s;
-    d[i + 1] = L + (d[i + 1] - L) * s;
-    d[i + 2] = L + (d[i + 2] - L) * s;
-  }
-  ctx.putImageData(img, 0, 0);
-}

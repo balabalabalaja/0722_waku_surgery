@@ -2,7 +2,6 @@ import React, {useCallback, useEffect, useReducer, useRef, useState} from 'react
 import BootScreen from './components/BootScreen';
 import ResultCard from './components/ResultCard';
 import Shutter from './components/Shutter';
-import TopBar from './components/TopBar';
 import {AUDIO, STR} from './content';
 import {bgm, playSfx, primeAudio} from './engine/audio';
 import {initialMachine, reduce} from './engine/machine';
@@ -27,9 +26,6 @@ export default function App() {
   const [m, dispatch] = useReducer(reduce, initialMachine);
   const [card, setCard] = useState<CardState | null>(null);
   const [flash, setFlash] = useState(false);
-  const [hudOn, setHudOn] = useState(true);
-  const [overlayOn, setOverlayOn] = useState(true);
-  const [saturation, setSaturation] = useState(100);
   const [engineReady, setEngineReady] = useState(false);
   const [pvAvailable, setPvAvailable] = useState(false);
 
@@ -155,27 +151,25 @@ export default function App() {
         {/* Full-bleed stage layer (camera + collage + dials, canvas-owned) */}
         <div ref={stageRef} className="absolute inset-0" />
 
-        {/* Safe layer: chrome in flex/percentage terms, never device-hardcoded */}
+        {/* The whole mirror hangs in a carved gilt frame, so the live selfie
+            reads as an oil painting on a gallery wall. Screen chrome only: it
+            sits above the canvas but is NOT drawn into it, so the polaroid
+            capture never picks up a random slice of moulding. Under the
+            result overlay (z-30) and the boot screen (z-40) by design. */}
+        <div id="picture-frame-back" aria-hidden="true" className="absolute inset-0 z-[24] pointer-events-none" />
+        <div
+          id="picture-frame"
+          aria-hidden="true"
+          className="absolute inset-0 z-[25] pointer-events-none"
+          style={{borderImageSource: `url(${import.meta.env.BASE_URL}frame/gilt-frame.webp)`}}
+        />
+
+        {/* Safe layer: chrome in flex/percentage terms, never device-hardcoded.
+            The tuning bar (HUD / overlay / dice / reset / SAT) is gone — it was
+            operator chrome that added nothing to the picture. The shutter is the
+            only control left on the canvas. */}
         {isPlaying && (
           <>
-            <div
-              className="absolute inset-x-0 z-20 flex justify-center pointer-events-none"
-              style={{top: 'var(--surgery-topbar-inset)'}}
-            >
-              <TopBar
-                hudOn={hudOn}
-                overlayOn={overlayOn}
-                saturation={saturation}
-                onToggleHud={() => setHudOn(engineRef.current?.toggleHud() ?? !hudOn)}
-                onToggleOverlay={() => setOverlayOn(engineRef.current?.toggleOverlay() ?? !overlayOn)}
-                onRandomize={() => engineRef.current?.dressRandom()}
-                onReset={() => engineRef.current?.resetBare()}
-                onSaturation={(v) => {
-                  setSaturation(v);
-                  engineRef.current?.setSaturation(v);
-                }}
-              />
-            </div>
             <div
               className="absolute inset-x-0 z-20 flex justify-center pointer-events-none"
               style={{bottom: 'var(--surgery-shutter-inset)'}}
@@ -187,7 +181,7 @@ export default function App() {
             {m.stage === 'fallback' && m.cameraOk === false && (
               <div
                 className="absolute inset-x-0 z-20 flex justify-center pointer-events-none"
-                style={{top: 'calc(var(--surgery-topbar-inset) + 48px)'}}
+                style={{top: 'var(--surgery-topbar-inset)'}}
               >
                 <span className="text-[10px] font-mono tracking-wider text-white/70 lowercase [text-shadow:0_1px_3px_rgba(0,0,0,0.55)]">
                   {STR.fallbackNote}

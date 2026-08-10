@@ -15,3 +15,7 @@ docs/rebuild/evidence-harden/
 docs/rebuild/ui-previews/
 docs/rebuild/*.png
 assets/
+
+# Raw Illustrator source dropped at the repo root — ~1GB, never part of a
+# build. Ignored so a stray `git add -A` cannot commit it.
+*.ai
