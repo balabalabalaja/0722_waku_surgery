@@ -60,7 +60,12 @@ export function pictureRect(viewW: number, viewH: number): Rect {
 // (shoulders, ears, more room), never inflate them. Cover-fitting the camera
 // into the frame would do the opposite, and did, until this was split out.
 export const SITTER = {
-  crop: {w: 0.554, h: 0.399},
+  // 1.5x the first pass (player call: the sitter read too small). Scaling both
+  // dimensions together scales the sitter exactly, and at this size the camera
+  // rect finally covers the picture vertically too — under the old crop its
+  // top edge sat inside the picture, so a head could never reach the upper
+  // part of the frame.
+  crop: {w: 0.831, h: 0.599},
   // Exponential ease per second on the horizontal centring. The rect must
   // never twitch: the sitter and every landmark ride on it.
   panEase: 5,
@@ -235,8 +240,8 @@ export function defaultAnchors(viewW: number, viewH: number): FaceAnchors {
   const box: FaceBox = {
     cx: p.x + p.w / 2,
     cy: p.y + p.h * 0.46,
-    w: viewW * 0.27,
-    h: viewW * 0.35,
+    w: viewW * 0.4,
+    h: viewW * 0.52,
   };
   const eyeW = box.w * 0.44;
   const noseH = box.h * 0.4;
