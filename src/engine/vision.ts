@@ -19,9 +19,17 @@ export class Vision {
   cameraOk: boolean | null = null;
   modelsOk: boolean | null = null;
   segReady = false;
-  // Person-confidence mask aligned with the (unmirrored) video frame; alpha =
-  // person. Drawn with the same cover+mirror transform as the video.
+  // Person-confidence mask; alpha = person. It covers `maskRect` of the video
+  // frame, NOT the whole frame — see segmentRegion.
   maskCanvas: HTMLCanvasElement | null = null;
+  // Which slice of the camera frame to segment, normalized. The model's output
+  // is 256x256 no matter what it is handed, so handing it only the region that
+  // can be seen is the one lever on edge resolution: on a 390pt phone the full
+  // frame gives a 10.5 device-pixel staircase, the visible slice gives 3.3.
+  // The stage sets this every frame; the default is the whole frame.
+  segmentRegion: {x: number; y: number; w: number; h: number} = {x: 0, y: 0, w: 1, h: 1};
+  maskRect = {x: 0, y: 0, w: 1, h: 1};
+  private segCanvas: HTMLCanvasElement | null = null;
   private face: any = null;
   private segmenter: any = null;
   private maskCtx: CanvasRenderingContext2D | null = null;
@@ -124,6 +132,28 @@ export class Vision {
     }
   }
 
+  // The slice of video handed to the segmenter. Drawing it into a small canvas
+  // first is also cheaper than passing the full frame — the model resizes to
+  // 256 either way, and now it resizes far less.
+  private cropForSegmenter(): HTMLCanvasElement | HTMLVideoElement {
+    const r = this.segmentRegion;
+    if (r.w <= 0 || r.h <= 0) return this.video;
+    const vw = this.video.videoWidth;
+    const vh = this.video.videoHeight;
+    const w = 384;
+    const h = Math.max(64, Math.round((w * r.h * vh) / (r.w * vw)));
+    if (!this.segCanvas) this.segCanvas = document.createElement('canvas');
+    const c = this.segCanvas;
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+    const ctx = c.getContext('2d')!;
+    ctx.drawImage(this.video, r.x * vw, r.y * vh, r.w * vw, r.h * vh, 0, 0, w, h);
+    this.maskRect = {...r};
+    return c;
+  }
+
   // Convert the confidence mask into an alpha canvas, auto-orienting so the
   // known face point samples as "person" (guards against fg/bg inversion).
   private updateMask(result: any) {
@@ -141,8 +171,13 @@ export class Vision {
     }
     let invert = false;
     if (this.lastFacePt) {
-      const fx = Math.min(w - 1, Math.max(0, Math.round(this.lastFacePt.x * w)));
-      const fy = Math.min(h - 1, Math.max(0, Math.round(this.lastFacePt.y * h)));
+      // The probe point is in whole-frame coordinates; the mask covers only
+      // maskRect of it.
+      const r = this.maskRect;
+      const rx = r.w > 0 ? (this.lastFacePt.x - r.x) / r.w : this.lastFacePt.x;
+      const ry = r.h > 0 ? (this.lastFacePt.y - r.y) / r.h : this.lastFacePt.y;
+      const fx = Math.min(w - 1, Math.max(0, Math.round(rx * w)));
+      const fy = Math.min(h - 1, Math.max(0, Math.round(ry * h)));
       invert = data[fy * w + fx] < 0.5;
     }
     const px = this.maskImage!.data;
@@ -188,8 +223,7 @@ export class Vision {
       // this keeps the per-frame inference budget where the face needs it.
       this.frameCounter++;
       if (this.frameCounter % 2 === 0 && this.segmenter) {
-        const sr = this.segmenter.segmentForVideo(this.video, ts + 0.5);
-        this.updateMask(sr);
+        this.updateMask(this.segmenter.segmentForVideo(this.cropForSegmenter(), ts + 0.5));
       }
     } catch (err) {
       console.error('inference error', err);

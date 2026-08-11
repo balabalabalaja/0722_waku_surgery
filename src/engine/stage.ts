@@ -12,6 +12,7 @@ import {
   ringSpecs,
   pictureRect,
   SITTER,
+  videoRegionFor,
   sitterPanX,
   sitterTransform,
   videoToScreen,
@@ -31,6 +32,7 @@ const KINDS: PartKind[] = ['eye', 'nose', 'mouth'];
 // MediaPipe FaceLandmarker indices used to read the face's height in frame.
 const IDX_FACE_TOP = 10;
 const IDX_CHIN = 152;
+
 
 
 // Feel tuning lives in one place for Harden's calibration pass.
@@ -432,6 +434,19 @@ export class CollageEngine {
       ? sitterPanX((res.face[IDX_FACE_TOP].x + res.face[IDX_CHIN].x) / 2, vW, vH, this.viewW, this.viewH)
       : 0;
     this.panX = lerp(this.panX, target, 1 - Math.exp(-SITTER.panEase * dt));
+    // Hand the segmenter only the slice of camera the picture can show. Its
+    // mask is 256x256 whatever it is given, so this is the one real lever on
+    // edge resolution — measured 10.5 device px per texel across the whole
+    // frame, 3.3 across this slice.
+    if (vW > 0 && vH > 0) {
+      this.vision.segmentRegion = videoRegionFor(
+        pictureRect(this.viewW, this.viewH),
+        vW,
+        vH,
+        sitterTransform(vW, vH, this.viewW, this.viewH, this.panX),
+        0.05,
+      );
+    }
     if (res.face) {
       const t = sitterTransform(vW, vH, this.viewW, this.viewH, this.panX);
       const pts = res.face.map((lm) =>
@@ -740,6 +755,11 @@ export class CollageEngine {
   // upscale into the person layer is only ~1px of antialiasing, which is what
   // keeps the edge from going jagged.
   private sharpenMask(mask: HTMLCanvasElement, t: CoverTransform, vw: number, vh: number) {
+    const r = this.vision.maskRect;
+    const mx = t.offX + r.x * vw * t.scale;
+    const my = t.offY + r.y * vh * t.scale;
+    const mw = r.w * vw * t.scale;
+    const mh = r.h * vh * t.scale;
     const w = Math.max(1, Math.round(this.canvas.width / 2));
     const h = Math.max(1, Math.round(this.canvas.height / 2));
     if (!this.maskA) {
@@ -764,13 +784,18 @@ export class CollageEngine {
     ac.clearRect(0, 0, this.viewW, this.viewH);
     ac.translate(this.viewW, 0);
     ac.scale(-1, 1); // the mask rides the same mirrored cover as the video
-    ac.drawImage(mask, t.offX, t.offY, vw * t.scale, vh * t.scale);
+    ac.drawImage(mask, mx, my, mw, mh);
     ac.globalCompositeOperation = 'destination-in';
-    ac.drawImage(mask, t.offX, t.offY, vw * t.scale, vh * t.scale);
+    ac.drawImage(mask, mx, my, mw, mh);
 
     bc.setTransform(1, 0, 0, 1, 0, 0);
     bc.globalCompositeOperation = 'source-over';
     bc.clearRect(0, 0, w, h);
+    // No explicit blur here, deliberately. A `ctx.filter = blur()` on these
+    // three draws costs the whole frame budget — measured 60fps/0.45ms without
+    // it against 15fps/7ms with it. It is also unnecessary now: the antialias
+    // comes free from this pass running at HALF resolution, so the final draw
+    // into the person layer upscales 2x and smooths the model's own grid.
     for (let i = 0; i < 3; i++) bc.drawImage(A, 0, 0);
     return B;
   }

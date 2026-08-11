@@ -121,6 +121,31 @@ export interface Pt {
   y: number;
 }
 
+// Which slice of the camera frame a screen rectangle corresponds to, in
+// normalized video coordinates, mirroring included. Used to hand the segmenter
+// only the region that can actually be seen — its mask is 256x256 whatever it
+// is given, so shrinking the region is the only way to buy edge resolution.
+export function videoRegionFor(
+  rect: Rect,
+  videoW: number,
+  videoH: number,
+  t: CoverTransform,
+  pad = 0,
+): Rect {
+  const sw = videoW * t.scale;
+  const sh = videoH * t.scale;
+  // screenX = viewW - (offX + fx*sw), so the rect's right edge is the region's
+  // LEFT edge — the mirror flips the order.
+  const fx0 = (t.viewW - (rect.x + rect.w) - t.offX) / sw;
+  const fx1 = (t.viewW - rect.x - t.offX) / sw;
+  const fy0 = (rect.y - t.offY) / sh;
+  const fy1 = (rect.y + rect.h - t.offY) / sh;
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  const x = clamp(fx0 - pad);
+  const y = clamp(fy0 - pad);
+  return {x, y, w: clamp(fx1 + pad) - x, h: clamp(fy1 + pad) - y};
+}
+
 // Landmarks are normalized [0..1] in video space; the video is drawn mirrored.
 export function videoToScreen(lm: Pt, videoW: number, videoH: number, t: CoverTransform): Pt {
   const sx = t.offX + lm.x * videoW * t.scale;

@@ -11,6 +11,7 @@ import {
   sitterPanX,
   sitterScale,
   sitterTransform,
+  videoRegionFor,
   videoToScreen,
   type Pt,
 } from '../src/engine/facefit.ts';
@@ -86,6 +87,33 @@ test('panning centres the face on the picture and never exposes a bare edge', ()
       assert.ok(Math.abs(x - (p.x + p.w / 2)) < 0.5, `x off at fx=${fx.toFixed(2)}: ${x}`);
     }
   }
+});
+
+test('the segmenter region maps back onto exactly the rect it came from', () => {
+  // If this mapping is off, the cutout is offset from the sitter — the kind of
+  // break that is invisible without a real face in front of the camera, so it
+  // is pinned here instead.
+  const t = sitterTransform(1280, 720, 390, 844, -37);
+  const rect = pictureRect(390, 844);
+  const r = videoRegionFor(rect, 1280, 720, t);
+  // Region corners, pushed back through the same mirrored mapping the mask is
+  // drawn with, must land on the rect's corners.
+  const left = videoToScreen({x: r.x + r.w, y: r.y}, 1280, 720, t);
+  const right = videoToScreen({x: r.x, y: r.y + r.h}, 1280, 720, t);
+  assert.ok(Math.abs(left.x - rect.x) < 0.5, `left edge off by ${left.x - rect.x}`);
+  assert.ok(Math.abs(left.y - rect.y) < 0.5, `top edge off by ${left.y - rect.y}`);
+  assert.ok(Math.abs(right.x - (rect.x + rect.w)) < 0.5, `right edge off`);
+  assert.ok(Math.abs(right.y - (rect.y + rect.h)) < 0.5, `bottom edge off`);
+  // And the slice really is a slice — cropping is the whole point.
+  assert.ok(r.w < 0.5, `region should be a narrow slice, got ${r.w}`);
+});
+
+test('the segmenter region stays inside the frame and survives padding', () => {
+  const t = sitterTransform(1280, 720, 390, 844);
+  const r = videoRegionFor(pictureRect(390, 844), 1280, 720, t, 0.05);
+  assert.ok(r.x >= 0 && r.y >= 0);
+  assert.ok(r.x + r.w <= 1 + 1e-9 && r.y + r.h <= 1 + 1e-9);
+  assert.ok(r.w > 0 && r.h > 0);
 });
 
 // Synthetic landmark cloud: enough indices for faceAnchors.
