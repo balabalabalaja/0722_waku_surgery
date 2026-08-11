@@ -569,11 +569,18 @@ export class CollageEngine {
     // construction; the whole clean-plate/Kuwahara pipeline is retired).
     this.drawPaintingBackdrop(ctx);
 
-    // Layer order (fix-04 player correction): painted background → nose/eye
-    // glass rings (behind the person) → person → MOUTH ring (foreground, at
-    // the chin, always visible) → windows → HUD.
+    // Layer order: painted background → ALL THREE glass rings → person →
+    // windows → HUD.
+    //
+    // The mouth ring used to be a foreground layer (fix-04): back then it was
+    // a chest band tucked under a full-bleed sitter, and drawing it in front
+    // was the only way to see it at all. Under the gallery composition the
+    // ring is frame-anchored and bigger than the sitter, so it no longer needs
+    // the favour — and in front it sat across the player's face (2026-08-10).
+    // All three dials are furniture in the room now, and the person is always
+    // the front-most thing in it.
     if (opts.rings) {
-      for (const kind of ['nose', 'eye'] as PartKind[]) {
+      for (const kind of ['nose', 'eye', 'mouth'] as PartKind[]) {
         const dial = this.dials[kind];
         const spec = this.rings[kind];
         const refraction = () => this.drawBackdropScaled(ctx, spec.cx, spec.cy, 1.06, now);
@@ -582,23 +589,6 @@ export class CollageEngine {
       }
       if (this.vision.videoReady) this.drawPersonCutout(ctx);
       else this.drawFallbackSitter(ctx, now);
-      const mDial = this.dials.mouth;
-      const mSpec = this.rings.mouth;
-      // Foreground glass refracts everything behind it: painted room + the
-      // sharp person layer.
-      const mRefraction = () => {
-        this.drawBackdropScaled(ctx, mSpec.cx, mSpec.cy, 1.06, now);
-        if (this.vision.videoReady && this.personCanvas) {
-          ctx.save();
-          ctx.translate(mSpec.cx, mSpec.cy);
-          ctx.scale(1.06, 1.06);
-          ctx.translate(-mSpec.cx, -mSpec.cy);
-          ctx.drawImage(this.personCanvas, 0, 0, this.viewW, this.viewH);
-          ctx.restore();
-        }
-      };
-      mDial.drawUnder(ctx, mSpec, now, mRefraction);
-      mDial.drawOver(ctx, mSpec, now);
     } else if (!this.vision.videoReady) {
       this.drawFallbackSitter(ctx, now);
     }
