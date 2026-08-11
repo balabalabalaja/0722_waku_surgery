@@ -21,7 +21,7 @@ import {
   type Pt,
 } from './facefit';
 import {angleDelta} from './dialmath';
-import {drawFrame, FRAME_RAIL, loadFrame} from './frameart';
+import {drawFrame, FRAME_INSET, FRAME_RAIL, loadFrame} from './frameart';
 import {Dial} from './rings';
 import type {PartBank} from './parts';
 import type {Vision} from './vision';
@@ -561,6 +561,8 @@ export class CollageEngine {
     // unclipped, so a chosen organ visibly travels from its dial and lands on
     // the painting instead of blinking out at the frame's edge.
     const pic = pictureRect(this.viewW, this.viewH);
+    const rail = Math.round(pic.w * FRAME_RAIL);
+    const inset = rail * FRAME_INSET; // content stops where the carving ends
     if (opts.rings) {
       for (const kind of ['nose', 'eye', 'mouth'] as PartKind[]) {
         const dial = this.dials[kind];
@@ -573,7 +575,7 @@ export class CollageEngine {
 
     ctx.save();
     ctx.beginPath();
-    ctx.rect(pic.x, pic.y, pic.w, pic.h);
+    ctx.rect(pic.x + inset, pic.y + inset, pic.w - inset * 2, pic.h - inset * 2);
     ctx.clip();
     this.drawPaintingBackdrop(ctx);
     if (this.vision.videoReady) this.drawPersonCutout(ctx);
@@ -589,7 +591,7 @@ export class CollageEngine {
     if (opts.hud) this.drawHud(ctx, now);
     ctx.restore();
 
-    drawFrame(ctx, pic.x, pic.y, pic.w, pic.h, Math.round(pic.w * FRAME_RAIL));
+    drawFrame(ctx, pic.x, pic.y, pic.w, pic.h, rail);
 
     if (this.hud.showOverlay) {
       for (const f of this.flights) {
@@ -805,6 +807,12 @@ export class CollageEngine {
   // anchored to the face box (degraded but stable).
   private drawPersonCutout(ctx: CanvasRenderingContext2D) {
     const v = this.vision.video;
+    if (!SITTER.cutout) {
+      // Raw feed. The caller has already clipped to the picture, so the frame
+      // does the cropping and nothing else is needed.
+      this.drawVideoCover(ctx);
+      return;
+    }
     if (!this.personCanvas) this.personCanvas = document.createElement('canvas');
     const pc = this.personCanvas;
     if (pc.width !== this.canvas.width || pc.height !== this.canvas.height) {

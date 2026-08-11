@@ -7,6 +7,12 @@
 
 const SLICE = 136; // gilt-frame.webp 9-slice, in source pixels
 export const FRAME_RAIL = 0.115; // rail thickness as a fraction of picture width
+// The carving fills 106.1 of the 136 source px in a slice; the rest of the
+// rail is transparent rebate, and the outer silhouette is scalloped. Content
+// must be clipped to where the carving actually ends or it shows through the
+// pierced scrollwork — invisible with a segmented sitter (transparent there),
+// obvious the moment the picture is filled edge to edge.
+export const FRAME_INSET = 0.76;
 
 let img: HTMLImageElement | null = null;
 let pending: Promise<boolean> | null = null;

@@ -66,6 +66,11 @@ export const SITTER = {
   // top edge sat inside the picture, so a head could never reach the upper
   // part of the frame.
   crop: {w: 0.831, h: 0.599},
+  // EXPERIMENT 2026-08-11: false fills the picture with the raw camera feed
+  // instead of a segmented sitter on the painted room. No mask, so no mask
+  // artefacts — the trade is that the player's real room shows inside the
+  // frame, and the painted room only survives outside it.
+  cutout: false,
   // Exponential ease per second on the horizontal centring. The rect must
   // never twitch: the sitter and every landmark ride on it.
   panEase: 5,

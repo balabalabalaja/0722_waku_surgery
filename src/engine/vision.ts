@@ -10,6 +10,8 @@
 // not pointing. Touch drag covers all three dials (verified), so the
 // half-working channel and its model went rather than staying as a trap.
 
+import {SITTER} from './facefit';
+
 export interface VisionResult {
   face: {x: number; y: number}[] | null; // normalized landmarks
 }
@@ -104,8 +106,17 @@ export class Vision {
         runningMode: 'VIDEO',
         numFaces: 1,
       });
-      // Person segmentation is optional: rings sit behind the person; if it
-      // fails we degrade to a feathered head/torso cutout in the stage.
+      // Person segmentation is optional AND now usually unnecessary: with
+      // SITTER.cutout off the picture shows the raw camera feed, so there is
+      // no mask to build. Gating the load rather than deleting the code keeps
+      // the toggle honest — flip it back and the model loads again — while
+      // skipping a model download, a GPU init and an inference every other
+      // frame in the shipped configuration.
+      if (!SITTER.cutout) {
+        this.segReady = false;
+        this.modelsOk = true;
+        return true;
+      }
       try {
         const {ImageSegmenter} = await import('@mediapipe/tasks-vision');
         this.segmenter = await ImageSegmenter.createFromOptions(vision, {
