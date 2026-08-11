@@ -9,7 +9,8 @@ import {RING_STYLE} from './engine/rings';
 import {RING_COMPOSITION} from './engine/facefit';
 import {TUNING, WINDOW_STYLE} from './engine/stage';
 import {loadParts} from './engine/parts';
-import {composeCard, creditLines, loadCardFrame} from './engine/polaroid';
+import {composeCard, creditLines} from './engine/polaroid';
+import {loadFrame} from './engine/frameart';
 import {CollageEngine} from './engine/stage';
 import {Vision} from './engine/vision';
 import {applyHostSafeArea, getPv, saveCard, shareCardToComments} from './waku/polyverse';
@@ -41,8 +42,9 @@ export default function App() {
     primeAudio();
     bgm.play(AUDIO.bgm);
     getPv().then((pv) => setPvAvailable(pv !== null));
-    // Warm the card's moulding now; the shutter must never wait on a fetch.
-    loadCardFrame();
+    // Warm the moulding now: the stage draws it every frame and the shutter
+    // must never wait on a fetch.
+    loadFrame();
     // Feed the host notch / home-indicator insets into --sys-* (the shell's job
     // when a shell exists; none here). No-op in a bare browser — env() stands.
     applyHostSafeArea();
@@ -116,7 +118,7 @@ export default function App() {
     setTimeout(() => setFlash(false), 280);
     try {
       // Card text uses the mono webfont; the frame is normally already warm.
-      await Promise.all([document.fonts.ready, loadCardFrame()]);
+      await Promise.all([document.fonts.ready, loadFrame()]);
       const {canvas} = engine.capture();
       const cardCanvas = composeCard(canvas, engine.applied);
       const pngUrl = cardCanvas.toDataURL('image/png');
@@ -154,18 +156,6 @@ export default function App() {
         {/* Full-bleed stage layer (camera + collage + dials, canvas-owned) */}
         <div ref={stageRef} className="absolute inset-0" />
 
-        {/* The whole mirror hangs in a carved gilt frame, so the live selfie
-            reads as an oil painting on a gallery wall. Screen chrome only: it
-            sits above the canvas but is NOT drawn into it, so the polaroid
-            capture never picks up a random slice of moulding. Under the
-            result overlay (z-30) and the boot screen (z-40) by design. */}
-        <div id="picture-frame-back" aria-hidden="true" className="absolute inset-0 z-[24] pointer-events-none" />
-        <div
-          id="picture-frame"
-          aria-hidden="true"
-          className="absolute inset-0 z-[25] pointer-events-none"
-          style={{borderImageSource: `url(${import.meta.env.BASE_URL}frame/gilt-frame.webp)`}}
-        />
 
         {/* Safe layer: chrome in flex/percentage terms, never device-hardcoded.
             The tuning bar (HUD / overlay / dice / reset / SAT) is gone — it was

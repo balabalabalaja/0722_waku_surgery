@@ -2,12 +2,14 @@ import {strict as assert} from 'node:assert';
 import test from 'node:test';
 import {
   LAYOUT_RESERVE,
-  SITTER,
+  PICTURE,
   coverTransform,
   defaultAnchors,
   faceAnchors,
+  pictureRect,
   ringSpecs,
-  sitterPan,
+  sitterPanX,
+  sitterScale,
   sitterTransform,
   videoToScreen,
   type Pt,
@@ -23,67 +25,65 @@ test('the painted backdrop keeps a plain full-bleed cover fit', () => {
   assert.ok(Math.abs(t.offY * 2 + 1600 * t.scale - 844) < 1e-6, 'centred on y');
 });
 
-test('unpanned camera rect is cover x SITTER.zoom, centred on x, on the floor', () => {
-  // 1280x720 video into a 390x844 portrait view: height-limited.
+test('a pan translates the camera rect and nothing else, mirroring intact', () => {
   const t = sitterTransform(1280, 720, 390, 844);
-  assert.ok(Math.abs(720 * t.scale - 844 * SITTER.zoom) < 1e-6, 'zoomed below cover');
-  assert.ok(t.offX < 0, 'sides still crop off-screen');
-  // Bottom edge sits exactly on the stage floor — a merely centred rect would
-  // chop the torso along a straight line partway up the screen.
-  assert.ok(Math.abs(t.offY + 720 * t.scale - 844) < 1e-6, 'floor-anchored, no pan');
-  // A pan translates the rect and nothing else.
-  const panned = sitterTransform(1280, 720, 390, 844, {dx: -12, dy: -90});
+  const panned = sitterTransform(1280, 720, 390, 844, -12);
   assert.equal(panned.scale, t.scale);
+  assert.equal(panned.offY, t.offY, 'vertical placement is not pannable');
   assert.ok(Math.abs(panned.offX - (t.offX - 12)) < 1e-6);
-  assert.ok(Math.abs(panned.offY - (t.offY - 90)) < 1e-6);
-  // Mirroring stays symmetric about the centre.
+  // Mirroring stays symmetric about the picture's centre line.
+  const p = pictureRect(390, 844);
   const c = videoToScreen({x: 0.5, y: 0.5}, 1280, 720, t);
-  assert.ok(Math.abs(c.x - 195) < 1e-6);
+  assert.ok(Math.abs(c.x - (p.x + p.w / 2)) < 1e-6);
   // A landmark on the video's left lands on the screen's right (mirror).
   const l = videoToScreen({x: 0.1, y: 0.5}, 1280, 720, t);
-  assert.ok(l.x > 195);
+  assert.ok(l.x > p.x + p.w / 2);
 });
 
-// Where a face at normalized (fx, fy) actually lands on the stage once the pan
-// has parked it. Mirrored on x, same as videoToScreen.
-function parked(fx: number, fy: number, vw = 1280, vh = 720, W = 390, H = 844) {
-  const pan = sitterPan(fx, fy, vw, vh, W, H);
-  const t = sitterTransform(vw, vh, W, H, pan);
-  return {x: W - (t.offX + fx * vw * t.scale), y: t.offY + fy * vh * t.scale, pan, t};
+// Where a face at normalized (fx, fy) actually lands, once the camera has been
+// panned. Mirrored on x, same as videoToScreen.
+function placed(fx: number, fy: number, vw = 1280, vh = 720, W = 390, H = 844) {
+  const panX = sitterPanX(fx, vw, vh, W, H);
+  const t = sitterTransform(vw, vh, W, H, panX);
+  return {x: W - (t.offX + fx * vw * t.scale), y: t.offY + fy * vh * t.scale, t};
 }
 
-test('parking pulls a high-framed face DOWN onto the anchor, exactly', () => {
-  // Sinking the rect is free — it uncovers nothing at the floor — so any face
-  // sitting above the anchor gets corrected onto it.
-  for (let fy = 0.1; fy <= 0.5001; fy += 0.08) {
-    for (const fx of [0.3, 0.5, 0.7]) {
-      const {x, y} = parked(fx, fy);
-      assert.ok(Math.abs(x - 390 * SITTER.anchorX) < 0.5, `x off at ${fx},${fy}: ${x}`);
-      assert.ok(Math.abs(y - 844 * SITTER.anchorY) < 0.5, `y off at ${fx},${fy}: ${y}`);
-    }
+test('the camera rect is a window on the picture, not a container for it', () => {
+  // The whole point of 2026-08-11: widening the picture must reveal MORE of the
+  // player, never inflate them. So the sitter's scale must not depend on
+  // PICTURE.w/h at all.
+  const wide = sitterScale(1280, 720, 390, 844);
+  const saved = {w: PICTURE.w, h: PICTURE.h};
+  try {
+    PICTURE.w = 0.95;
+    PICTURE.h = 0.8;
+    assert.equal(sitterScale(1280, 720, 390, 844), wide, 'sitter scale must ignore the picture');
+  } finally {
+    PICTURE.w = saved.w;
+    PICTURE.h = saved.h;
   }
 });
 
-test('parking never lifts the rect off the floor, whatever the framing', () => {
-  // A lift IS the gap that would have to be faked, and faking it was rejected
-  // twice. So a low-framed face sits low rather than buying a strip of
-  // invented torso; the rect's bottom stays at or below the stage floor.
-  for (let fy = 0; fy <= 1.0001; fy += 0.05) {
-    const {pan, t, y} = parked(0.5, fy);
-    assert.ok(pan.dy >= -1e-9, `rect lifted by ${-pan.dy} at fy=${fy.toFixed(2)}`);
-    assert.ok(t.offY + 720 * t.scale >= 844 - 1e-6, 'camera reaches the stage floor');
-    assert.ok(y >= 844 * SITTER.anchorY - 0.5, 'never parked above the anchor');
+test("the camera's bottom edge sits exactly on the picture's bottom edge", () => {
+  // This is what crops the body — the moulding, not a straight line in mid-air.
+  // Three earlier attempts to fake a continuation below the cut were rejected.
+  const p = pictureRect(390, 844);
+  for (const fx of [0, 0.5, 1]) {
+    const {t} = placed(fx, 0.5);
+    assert.ok(Math.abs(t.offY + 720 * t.scale - (p.y + p.h)) < 1e-6, 'bottom pinned to the picture');
   }
 });
 
-test('parking never uncovers more than SITTER.maxLift, nor a bare side edge', () => {
-  for (let fx = 0; fx <= 1.0001; fx += 0.1) {
-    for (let fy = 0; fy <= 1.0001; fy += 0.1) {
-      const {pan, t} = parked(fx, fy);
-      assert.ok(pan.dy >= -SITTER.maxLift - 1e-9, `lift ${pan.dy} exceeds the cap`);
-      // The rect must still span the stage horizontally at every extreme.
-      assert.ok(t.offX <= 1e-9, `left edge exposed at fx=${fx.toFixed(1)}`);
-      assert.ok(t.offX + 1280 * t.scale >= 390 - 1e-9, `right edge exposed at fx=${fx.toFixed(1)}`);
+test('panning centres the face on the picture and never exposes a bare edge', () => {
+  const p = pictureRect(390, 844);
+  for (let fx = 0; fx <= 1.0001; fx += 0.05) {
+    const {x, t} = placed(fx, 0.5);
+    // The rect must still span the picture horizontally at every extreme.
+    assert.ok(t.offX <= p.x + 1e-9, `left edge exposed at fx=${fx.toFixed(2)}`);
+    assert.ok(t.offX + 1280 * t.scale >= p.x + p.w - 1e-9, `right edge exposed at fx=${fx.toFixed(2)}`);
+    // Within the slack the face parks dead on the picture's centre line.
+    if (fx >= 0.3 && fx <= 0.7) {
+      assert.ok(Math.abs(x - (p.x + p.w / 2)) < 0.5, `x off at fx=${fx.toFixed(2)}: ${x}`);
     }
   }
 });
@@ -128,39 +128,24 @@ test('faceAnchors picks the screen-right eye and centers parts on the nose', () 
   assert.equal(a.box.h, 300);
 });
 
-// On-screen half-extents of a drawn ring: radius + glass tube, rotated by the
-// pose. This is what actually has to clear the gilt moulding — clamping on r
-// alone slid the tube under the frame.
-const TUBE_OUTSET = 1.125;
-function extent(kind: 'eye' | 'nose' | 'mouth', r: number) {
-  const {theta, squash} = RING_POSE[kind];
-  const rx = r * TUBE_OUTSET;
-  const ry = r * squash * TUBE_OUTSET;
-  return {
-    hw: Math.hypot(rx * Math.cos(theta), ry * Math.sin(theta)),
-    hh: Math.hypot(rx * Math.sin(theta), ry * Math.cos(theta)),
-  };
-}
-
-// The regression this whole layout exists to prevent: a ring hanging off the
-// side of a portrait stage. Checked on the narrowest and the widest phone
-// shapes we ship to, both of which used to clip.
+// The regression this layout exists to prevent, restated for the picture
+// composition: a dial whose sprites vanish behind the picture. The sprites sit
+// in two columns at cx ± r, and those columns must clear the picture's sides.
 for (const [w, h] of [
   [390, 844],
   [360, 780],
   [430, 932],
   [412, 883],
 ]) {
-  test(`all three dials sit entirely inside the frame opening at ${w}x${h}`, () => {
+  test(`every dial keeps both sprite columns clear of the picture at ${w}x${h}`, () => {
     const rings = ringSpecs(defaultAnchors(w, h).box, w, h);
-    const rail = w * 0.087; // --surgery-frame-rail
+    const p = pictureRect(w, h);
     assert.equal(Object.keys(rings).length, 3);
     for (const [kind, s] of Object.entries(rings)) {
-      const {hw, hh} = extent(kind as 'eye' | 'nose' | 'mouth', s.r);
-      assert.ok(s.cx - hw >= rail - 0.5, `${kind} clears the left rail`);
-      assert.ok(s.cx + hw <= w - rail + 0.5, `${kind} clears the right rail`);
-      assert.ok(s.cy - hh >= LAYOUT_RESERVE.top - 0.5, `${kind} clears the host chrome`);
-      assert.ok(s.cy + hh <= h - LAYOUT_RESERVE.bottom + 0.5, `${kind} clears the floor`);
+      assert.ok(s.cx - s.r <= p.x + 0.5, `${kind} left column is behind the picture`);
+      assert.ok(s.cx + s.r >= p.x + p.w - 0.5, `${kind} right column is behind the picture`);
+      assert.ok(s.cy > LAYOUT_RESERVE.top - 0.5, `${kind} is under the host chrome`);
+      assert.ok(s.cy < h - LAYOUT_RESERVE.bottom + 0.5, `${kind} is off the floor`);
       assert.ok(s.r > 40, `${kind} stays big enough to grab`);
     }
   });
@@ -170,17 +155,14 @@ test('the dials are frame-anchored — the face box cannot move them', () => {
   const near = ringSpecs({cx: 40, cy: 700, w: 320, h: 420}, 390, 844);
   const far = ringSpecs({cx: 340, cy: 90, w: 60, h: 80}, 390, 844);
   assert.deepEqual(near, far, 'ring geometry is independent of the sitter');
-  // ...and they stack down the picture in reading order.
   assert.ok(near.eye.cy < near.nose.cy && near.nose.cy < near.mouth.cy);
 });
 
-test('default anchors put a small sitter on the anchor, inside the middle dial', () => {
+test('default anchors put the faceless sitter inside the picture', () => {
   const a = defaultAnchors(390, 844);
-  const rings = ringSpecs(a.box, 390, 844);
-  assert.ok(a.box.w < rings.nose.r * 2, 'a head still fits inside a dial');
-  // The faceless fallback must sit where a parked real face sits, or the
-  // no-camera composition and the live one disagree.
-  assert.equal(a.box.cx, 390 * SITTER.anchorX);
-  assert.equal(a.box.cy, 844 * SITTER.anchorY);
-  assert.ok(Math.abs(a.box.cy - rings.nose.cy) < 844 * 0.02, 'lands in the middle dial');
+  const p = pictureRect(390, 844);
+  // The no-camera fallback must compose like the live one, or the two disagree.
+  assert.equal(a.box.cx, p.x + p.w / 2);
+  assert.ok(a.box.cy > p.y && a.box.cy < p.y + p.h, 'head sits inside the picture');
+  assert.ok(a.box.w < p.w, 'head fits the picture');
 });

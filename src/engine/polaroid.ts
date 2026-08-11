@@ -2,45 +2,20 @@
 // local sprites + the frame moulding) plus code decoration, so toDataURL
 // stays untainted.
 //
-// 2026-08-10 player call: the card is no longer a tilted polaroid. The live
-// mirror hangs in a gilt frame, so the snapshot is that same painting — hung
-// STRAIGHT on a gallery wall, in the same moulding, with a museum label under
-// it. And no face-centred crop any more: the card carries the WHOLE stage,
-// because the three dials around the sitter ARE the composition.
+// 2026-08-10 player call: the card is no longer a tilted polaroid. It hangs
+// STRAIGHT on a gallery wall with a museum label under it, and carries the
+// WHOLE stage, because the three dials around the sitter ARE the composition.
+//
+// 2026-08-11: the moulding moved INTO the scene (it frames the sitter's
+// picture now, not the screen), so the card must not add a second one — two
+// nested gilt frames on one card read as a mistake. The card is the wall.
 
 import {CARD_FONT, CREDIT_SEP, CREDITS, STR} from '../content';
 import type {Selection} from '../types';
 
-const WALL = 60; // gallery wall margin left/right/top of the painting
-const PAINT_W = 720; // painting width; height follows the stage aspect
-const LABEL_H = 258; // wall strip under the frame carrying the label
-const RAIL = 0.087; // frame rail vs painting width — same ratio as the screen
-const SLICE = 136; // gilt-frame.webp 9-slice, in source pixels
-
-let frameImg: HTMLImageElement | null = null;
-let framePromise: Promise<boolean> | null = null;
-
-// Warm the moulding at boot so the shutter never waits on a network round
-// trip. Resolves false if it never arrives — the card then falls back to a
-// plain dark reveal rather than failing outright.
-export function loadCardFrame(): Promise<boolean> {
-  if (framePromise) return framePromise;
-  framePromise = new Promise((resolve) => {
-    const im = new Image();
-    // Same cross-origin story as parts.ts: in the platform shell the injected
-    // <base href> resolves this to GCS, and a no-cors raster would taint the
-    // card canvas so toDataURL throws SecurityError with no snapshot at all
-    // (fix-14). GCS serves ACAO:*, and same-origin contexts ignore this.
-    im.crossOrigin = 'anonymous';
-    im.onload = () => {
-      frameImg = im;
-      resolve(true);
-    };
-    im.onerror = () => resolve(false);
-    im.src = `${import.meta.env.BASE_URL}frame/gilt-frame.webp`;
-  });
-  return framePromise;
-}
+const WALL = 60; // gallery wall margin left/right/top of the scene
+const PAINT_W = 720; // scene width on the card; height follows the stage aspect
+const LABEL_H = 258; // wall strip under the scene carrying the label
 
 export function creditLines(applied: Selection): string[] {
   const lines: string[] = [];
@@ -58,54 +33,6 @@ export function creditLines(applied: Selection): string[] {
   }
   if (lines.length === 0) lines.push(STR.bareCanvas);
   return lines;
-}
-
-// Canvas 9-slice. Corners keep their aspect; the straight rails tile a whole
-// number of times, the same contract as border-image-repeat: round on screen.
-function nineSlice(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  rail: number,
-) {
-  const iw = img.naturalWidth;
-  const ih = img.naturalHeight;
-  const mw = iw - SLICE * 2; // source middle spans
-  const mh = ih - SLICE * 2;
-  const dw = w - rail * 2; // destination middle spans
-  const dh = h - rail * 2;
-  const px = rail / SLICE; // source px -> destination px
-  const d = (
-    sx: number,
-    sy: number,
-    sw: number,
-    sh: number,
-    dx: number,
-    dy: number,
-    ddw: number,
-    ddh: number,
-  ) => ctx.drawImage(img, sx, sy, sw, sh, dx, dy, ddw, ddh);
-
-  d(0, 0, SLICE, SLICE, x, y, rail, rail);
-  d(iw - SLICE, 0, SLICE, SLICE, x + w - rail, y, rail, rail);
-  d(0, ih - SLICE, SLICE, SLICE, x, y + h - rail, rail, rail);
-  d(iw - SLICE, ih - SLICE, SLICE, SLICE, x + w - rail, y + h - rail, rail, rail);
-
-  const nx = Math.max(1, Math.round(dw / (mw * px)));
-  const tw = dw / nx;
-  for (let i = 0; i < nx; i++) {
-    d(SLICE, 0, mw, SLICE, x + rail + i * tw, y, tw, rail);
-    d(SLICE, ih - SLICE, mw, SLICE, x + rail + i * tw, y + h - rail, tw, rail);
-  }
-  const ny = Math.max(1, Math.round(dh / (mh * px)));
-  const th = dh / ny;
-  for (let i = 0; i < ny; i++) {
-    d(0, SLICE, SLICE, mh, x, y + rail + i * th, rail, th);
-    d(iw - SLICE, SLICE, SLICE, mh, x + w - rail, y + rail + i * th, rail, th);
-  }
 }
 
 export function composeCard(scene: HTMLCanvasElement, applied: Selection): HTMLCanvasElement {
@@ -144,7 +71,7 @@ export function composeCard(scene: HTMLCanvasElement, applied: Selection): HTMLC
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, cardW, cardH);
 
-  // The painting casts onto the wall.
+  // The scene casts onto the wall.
   ctx.save();
   ctx.shadowColor = 'rgba(48,36,20,0.34)';
   ctx.shadowBlur = 34;
@@ -155,21 +82,11 @@ export function composeCard(scene: HTMLCanvasElement, applied: Selection): HTMLC
 
   ctx.drawImage(scene, 0, 0, scene.width, scene.height, px, py, PAINT_W, paintH);
 
-  // No backing board here, unlike the screen. The screen needs one because
-  // dial sprites orbit under the pierced outer scrollwork; on the card the
-  // painting already fills the rect, so there is nothing to leak — and a
-  // plain backing rectangle would poke past the moulding's scalloped outer
-  // edge along the middle of each rail and read as a dark rim on the wall
-  // (invisible on the black stage, obvious here).
-  const rail = Math.round(PAINT_W * RAIL);
-  if (frameImg) {
-    nineSlice(ctx, frameImg, px, py, PAINT_W, paintH, rail);
-  } else {
-    // Moulding never arrived — a plain reveal still reads as framed.
-    ctx.strokeStyle = 'rgba(120,96,48,0.9)';
-    ctx.lineWidth = 6;
-    ctx.strokeRect(px + 3, py + 3, PAINT_W - 6, paintH - 6);
-  }
+  // A hairline so the scene reads as mounted rather than bleeding into the
+  // wall. The gilt moulding is already inside the scene.
+  ctx.strokeStyle = 'rgba(70,58,40,0.35)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(px + 1, py + 1, PAINT_W - 2, paintH - 2);
 
   // Museum label on the wall below.
   // Museum label. The wordmark is pinned to the card floor while the credits

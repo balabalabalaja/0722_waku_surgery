@@ -37,39 +37,6 @@ body {
   --surgery-breathe: 16px; /* Zone C-safe margin (safe-area.md) */
   --surgery-topbar-inset: calc(var(--surgery-safe-top) + var(--surgery-top-chrome) + var(--surgery-breathe));
   --surgery-shutter-inset: calc(var(--surgery-bottom-nav) + var(--surgery-bottom-margin));
-  /* Gilt frame rail. Mirrors #stage-frame's own width expression so the rail
-     is a true fraction of the stage, not of the viewport — on a phone taller
-     than 9:16 the stage is narrower than 100vw and a vw-based rail would run
-     fat. Clamped so it never swallows a small screen or looks like piping on
-     a large one. */
-  --surgery-stage-w: min(100vw, calc(100dvh * 9 / 16));
-  --surgery-frame-rail: clamp(20px, calc(var(--surgery-stage-w) * 0.087), 52px);
-  /* The carved moulding fills 106.1 of the 136 source px in each slice; the
-     rest of the slice is the transparent rebate. A backing board exactly that
-     wide sits behind the frame so the collage cannot show through the pierced
-     scrollwork at the outer edge — 0.78 = 106.1/136. Wider and it reads as a
-     black liner; narrower and the leak comes back. */
-  --surgery-frame-back: calc(var(--surgery-frame-rail) * 0.78);
-}
-
-/* 9-slice: the carved corners keep their aspect at any stage size and the
-   straight rails tile with `round`, so nothing about the moulding stretches.
-   `border-image-slice` is in SOURCE pixels of the 512px asset — 136/512 is
-   exactly where the corner ornament ends. border-image-source is set inline
-   in App.tsx because the built site is served from a GCS subdirectory and the
-   URL has to go through import.meta.env.BASE_URL. */
-#picture-frame {
-  border-style: solid;
-  border-color: transparent;
-  border-width: var(--surgery-frame-rail);
-  border-image-slice: 136;
-  border-image-repeat: round;
-}
-
-#picture-frame-back {
-  border-style: solid;
-  border-color: #12100c;
-  border-width: var(--surgery-frame-back);
 }
 
 @keyframes fade-in {

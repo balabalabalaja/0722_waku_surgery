@@ -10,16 +10,17 @@ import {
   faceAnchors,
   lerp,
   ringSpecs,
+  pictureRect,
   SITTER,
-  sitterPan,
+  sitterPanX,
   sitterTransform,
-  type SitterPan,
   videoToScreen,
   type CoverTransform,
   type FaceAnchors,
   type Pt,
 } from './facefit';
 import {angleDelta} from './dialmath';
+import {drawFrame, FRAME_RAIL, loadFrame} from './frameart';
 import {Dial} from './rings';
 import type {PartBank} from './parts';
 import type {Vision} from './vision';
@@ -109,7 +110,7 @@ export class CollageEngine {
   private targetAnchors: FaceAnchors;
   private rings: Record<PartKind, RingSpec>;
   private meshPts: Pt[] = [];
-  private pan: SitterPan = {dx: 0, dy: 0}; // eased camera-rect pan that parks the face
+  private panX = 0; // eased horizontal camera pan that centres the face in the picture
   private lastFaceAt = -Infinity;
   faceVisible = false;
 
@@ -421,26 +422,18 @@ export class CollageEngine {
 
     // Vision
     const res = this.vision.detect(now);
-    // Camera-rect pan, resolved BEFORE the landmarks are mapped so the sitter
-    // and every anchor ride the exact same rect this frame. Eased hard: the
-    // whole person moves with it. With no face it drifts back to the plain
-    // floor-pinned rect.
+    // Camera pan, resolved BEFORE the landmarks are mapped so the sitter and
+    // every anchor ride the exact same rect this frame. Horizontal only: the
+    // rect's bottom is pinned to the picture's bottom edge, which is what lets
+    // the moulding do the cropping. Eased hard — the whole sitter rides it.
     const vW = this.vision.video.videoWidth;
     const vH = this.vision.video.videoHeight;
     const target = res.face
-      ? sitterPan(
-          (res.face[IDX_FACE_TOP].x + res.face[IDX_CHIN].x) / 2,
-          (res.face[IDX_FACE_TOP].y + res.face[IDX_CHIN].y) / 2,
-          vW,
-          vH,
-          this.viewW,
-          this.viewH,
-        )
-      : {dx: 0, dy: 0};
-    const kp = 1 - Math.exp(-SITTER.panEase * dt);
-    this.pan = {dx: lerp(this.pan.dx, target.dx, kp), dy: lerp(this.pan.dy, target.dy, kp)};
+      ? sitterPanX((res.face[IDX_FACE_TOP].x + res.face[IDX_CHIN].x) / 2, vW, vH, this.viewW, this.viewH)
+      : 0;
+    this.panX = lerp(this.panX, target, 1 - Math.exp(-SITTER.panEase * dt));
     if (res.face) {
-      const t = sitterTransform(vW, vH, this.viewW, this.viewH, this.pan);
+      const t = sitterTransform(vW, vH, this.viewW, this.viewH, this.panX);
       const pts = res.face.map((lm) =>
         videoToScreen(lm, this.vision.video.videoWidth, this.vision.video.videoHeight, t),
       );
@@ -542,16 +535,17 @@ export class CollageEngine {
     // construction; the whole clean-plate/Kuwahara pipeline is retired).
     this.drawPaintingBackdrop(ctx);
 
-    // Layer order: painted background → ALL THREE glass rings → person →
-    // windows → HUD.
+    // Layer order (2026-08-11, the picture composition):
+    //   painted room -> all three dials -> THE PICTURE { room repainted clean,
+    //   sitter, applied parts, HUD } -> the moulding -> parts still in flight.
     //
-    // The mouth ring used to be a foreground layer (fix-04): back then it was
-    // a chest band tucked under a full-bleed sitter, and drawing it in front
-    // was the only way to see it at all. Under the gallery composition the
-    // ring is frame-anchored and bigger than the sitter, so it no longer needs
-    // the favour — and in front it sat across the player's face (2026-08-10).
-    // All three dials are furniture in the room now, and the person is always
-    // the front-most thing in it.
+    // The room is repainted inside the picture so the dials never show through
+    // it: they orbit the picture, they are not in it. Everything anchored to
+    // the face is clipped with the sitter, or a part window would hang in the
+    // room when the player leans out of frame. Flights are drawn LAST and
+    // unclipped, so a chosen organ visibly travels from its dial and lands on
+    // the painting instead of blinking out at the frame's edge.
+    const pic = pictureRect(this.viewW, this.viewH);
     if (opts.rings) {
       for (const kind of ['nose', 'eye', 'mouth'] as PartKind[]) {
         const dial = this.dials[kind];
@@ -560,14 +554,15 @@ export class CollageEngine {
         dial.drawUnder(ctx, spec, now, refraction);
         dial.drawOver(ctx, spec, now);
       }
-      if (this.vision.videoReady) this.drawPersonCutout(ctx);
-      else this.drawFallbackSitter(ctx, now);
-    } else if (!this.vision.videoReady) {
-      this.drawFallbackSitter(ctx, now);
     }
 
-    // fix-01 mechanic ②: the painting shows only inside the white windows,
-    // above the person.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(pic.x, pic.y, pic.w, pic.h);
+    ctx.clip();
+    this.drawPaintingBackdrop(ctx);
+    if (this.vision.videoReady) this.drawPersonCutout(ctx);
+    else this.drawFallbackSitter(ctx, now);
     if (this.hud.showOverlay) {
       for (const kind of KINDS) {
         const idx = this.applied[kind];
@@ -575,7 +570,13 @@ export class CollageEngine {
         if (this.flights.some((f) => f.kind === kind)) continue; // in-flight replacement
         this.drawAppliedPart(ctx, kind, idx, 1);
       }
-      // In-flight sprites fly toward their window, unclipped while moving.
+    }
+    if (opts.hud) this.drawHud(ctx, now);
+    ctx.restore();
+
+    drawFrame(ctx, pic.x, pic.y, pic.w, pic.h, Math.round(pic.w * FRAME_RAIL));
+
+    if (this.hud.showOverlay) {
       for (const f of this.flights) {
         const t = Math.min(1, Math.max(0, (now - f.t0) / TUNING.flightMs));
         if (t <= 0) continue;
@@ -664,7 +665,7 @@ export class CollageEngine {
 
   private drawVideoCover(ctx: CanvasRenderingContext2D) {
     const v = this.vision.video;
-    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH, this.pan);
+    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH, this.panX);
     ctx.save();
     ctx.translate(this.viewW, 0);
     ctx.scale(-1, 1);
@@ -786,7 +787,7 @@ export class CollageEngine {
       pc.height = this.canvas.height;
     }
     const pctx = pc.getContext('2d')!;
-    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH, this.pan);
+    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH, this.panX);
     pctx.save();
     pctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     pctx.clearRect(0, 0, this.viewW, this.viewH);

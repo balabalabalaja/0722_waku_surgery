@@ -30,100 +30,85 @@ export function coverTransform(
   };
 }
 
-// `zoom` is the single knob for the sitter's size. Everything that places them
-// — the video draw, the segmentation mask and all 468 landmarks (and so the
-// part windows anchored to them) — goes through sitterTransform, so nothing
-// can drift out of register when it changes.
+// THE PICTURE. A gilt-framed rectangle hung in the painted room; the sitter
+// lives inside it and nothing else does. This is what finally settled the
+// bottom of the stage: the body is cropped by the PICTURE'S OWN EDGE, which is
+// what a framed portrait has always done, so nothing has to be invented down
+// there. Three earlier attempts — a straight cut, a stretched torso, a torn
+// edge — were all trying to answer a question this geometry never asks.
 //
-// It is 1 (plain cover), and that is forced, not a preference. The player's
-// standing requirement is that the BODY IS REAL ALL THE WAY DOWN — no faked
-// continuation at the bottom of the stage. The camera rect is `zoom` of the
-// stage tall, so anything below 1 leaves a strip the camera cannot fill:
-// 0.92 already exposes 68px. Two attempts to fill that strip were rejected on
-// sight (a stretched torso that duplicated a jacket collar, then a torn edge),
-// and they were rejected correctly — both are invention.
-//
-// The cost is real and was paid knowingly: a cover-sized sitter is wide enough
-// to hide much of the bottom dial behind their shoulders. Shrinking them again
-// brings the strip straight back. Face centred / small sitter / real body to
-// the floor: pick two.
+// It also un-blocks the dials: the sitter can no longer spill across the stage
+// and hide them, because the frame contains them.
+export const PICTURE = {w: 0.72, h: 0.52, cx: 0.5, cy: 0.535};
+
+export interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export function pictureRect(viewW: number, viewH: number): Rect {
+  const w = viewW * PICTURE.w;
+  const h = viewH * PICTURE.h;
+  return {x: viewW * PICTURE.cx - w / 2, y: viewH * PICTURE.cy - h / 2, w, h};
+}
+
+// The sitter's size comes from the notional portrait crop the camera fills —
+// deliberately NOT from the picture's size (player call 2026-08-11). The frame
+// is a WINDOW, not a container: widening it must reveal more of the player
+// (shoulders, ears, more room), never inflate them. Cover-fitting the camera
+// into the frame would do the opposite, and did, until this was split out.
 export const SITTER = {
-  zoom: 1,
-  // The face is PARKED on the stage, not left wherever the player's framing
-  // puts it (player call 2026-08-10, superseding the bounded float). The
-  // camera rect is panned every frame so the face box centre lands on this
-  // anchor — which happens to be the middle dial's own centre — so the three
-  // dials read in anatomical order around the player: eyes above, nose around,
-  // mouth below. Left free, the sitter drifted to the bottom of the stage and
-  // the correspondence read as noise.
-  anchorX: 0.5,
-  anchorY: 0.5,
-  // The rect may NEVER lift off the stage floor — a lift is exactly the gap
-  // that has to be faked. Parking therefore only ever corrects a face DOWNWARD
-  // onto the anchor (sinking is free: it uncovers nothing, it just shows more
-  // painted room above the head). A player framed low simply sits low, which
-  // is honest and also nudges them to raise the phone.
-  maxLift: 0,
-  // Exponential ease per second. The rect must never twitch: the whole sitter
-  // and every landmark ride on it.
+  crop: {w: 0.554, h: 0.399},
+  // Exponential ease per second on the horizontal centring. The rect must
+  // never twitch: the sitter and every landmark ride on it.
   panEase: 5,
 };
 
-export interface SitterPan {
-  dx: number;
-  dy: number;
+export function sitterScale(videoW: number, videoH: number, viewW: number, viewH: number): number {
+  return Math.max((viewW * SITTER.crop.w) / videoW, (viewH * SITTER.crop.h) / videoH);
 }
 
-export const NO_PAN: SitterPan = {dx: 0, dy: 0};
-
-// Pan that parks a face at normalized video position (fx, fy) on the stage
-// anchor, clamped two ways:
-//   x — never past the point where the camera rect would stop covering the
-//       stage, so no bare edge can slide into frame;
-//   y — never lifts more than SITTER.maxLift off the floor. Sinking BELOW the
-//       floor is unbounded and free: it uncovers nothing.
-export function sitterPan(
-  fx: number,
-  fy: number,
-  videoW: number,
-  videoH: number,
-  viewW: number,
-  viewH: number,
-): SitterPan {
-  const scale = Math.max(viewW / videoW, viewH / videoH) * SITTER.zoom;
-  const baseX = (viewW - videoW * scale) / 2;
-  const baseY = viewH - videoH * scale;
-  // The video is drawn mirrored, so screenX = viewW - (offX + fx*videoW*scale).
-  const wantX = viewW * (1 - SITTER.anchorX) - fx * videoW * scale;
-  const wantY = viewH * SITTER.anchorY - fy * videoH * scale;
-  const slackX = Math.max(0, (videoW * scale - viewW) / 2);
-  return {
-    dx: Math.min(slackX, Math.max(-slackX, wantX - baseX)),
-    dy: Math.max(-SITTER.maxLift, wantY - baseY),
-  };
-}
-
-// Camera rect: cover x zoom, floor-anchored and centred, plus `pan`. Keep this
-// SEPARATE from coverTransform — they were one function until the zoom landed,
-// and sharing it silently shrank the painted backdrop too.
+// Camera rect. Its BOTTOM edge is pinned to the picture's bottom edge, so the
+// body is cut by the moulding rather than ending in mid-air; `panX` slides it
+// sideways to centre the face. Keep this SEPARATE from coverTransform — they
+// were one function once, and sharing it silently shrank the painted backdrop.
 export function sitterTransform(
   videoW: number,
   videoH: number,
   viewW: number,
   viewH: number,
-  pan: SitterPan = NO_PAN,
+  panX = 0,
 ): CoverTransform {
-  const scale = Math.max(viewW / videoW, viewH / videoH) * SITTER.zoom;
+  const scale = sitterScale(videoW, videoH, viewW, viewH);
+  const p = pictureRect(viewW, viewH);
   return {
     scale,
-    offX: (viewW - videoW * scale) / 2 + pan.dx,
-    // Floor-anchored before the pan. A rect scaled below cover and merely
-    // centred would end partway up the stage and chop the segmented torso off
-    // along a dead straight horizontal line.
-    offY: viewH - videoH * scale + pan.dy,
+    offX: p.x + p.w / 2 - (videoW * scale) / 2 + panX,
+    offY: p.y + p.h - videoH * scale,
     viewW,
     viewH,
   };
+}
+
+// Horizontal pan that parks a face at normalized video x `fx` on the picture's
+// centre line, clamped so the camera rect never stops covering the picture —
+// past that a bare edge would slide in through the frame.
+export function sitterPanX(
+  fx: number,
+  videoW: number,
+  videoH: number,
+  viewW: number,
+  viewH: number,
+): number {
+  const scale = sitterScale(videoW, videoH, viewW, viewH);
+  const p = pictureRect(viewW, viewH);
+  const base = p.x + p.w / 2 - (videoW * scale) / 2;
+  // The video is drawn mirrored: screenX = viewW - (offX + fx*videoW*scale).
+  const want = viewW - (p.x + p.w / 2) - fx * videoW * scale;
+  const slack = Math.max(0, (videoW * scale - p.w) / 2);
+  return Math.min(slack, Math.max(-slack, want - base));
 }
 
 export interface Pt {
@@ -243,14 +228,15 @@ export function faceAnchors(pts: Pt[]): FaceAnchors {
 }
 
 // Default anchors when no face is available (ready-without-face / fallback):
-// an abstract head, sized and placed where a real sitter gets parked — on the
-// stage anchor, small, inside the middle dial.
+// an abstract head sized and placed like a real sitter — inside the picture,
+// a little above its centre.
 export function defaultAnchors(viewW: number, viewH: number): FaceAnchors {
+  const p = pictureRect(viewW, viewH);
   const box: FaceBox = {
-    cx: viewW * SITTER.anchorX,
-    cy: viewH * SITTER.anchorY,
-    w: viewW * 0.36,
-    h: viewW * 0.47,
+    cx: p.x + p.w / 2,
+    cy: p.y + p.h * 0.46,
+    w: viewW * 0.27,
+    h: viewW * 0.35,
   };
   const eyeW = box.w * 0.44;
   const noseH = box.h * 0.4;
@@ -263,77 +249,66 @@ export function defaultAnchors(viewW: number, viewH: number): FaceAnchors {
   };
 }
 
-// Ring placement, 'gallery' composition (player call 2026-08-10, reference:
-// three complete plates stacked down the picture, each one bigger than the
-// sitter).
+// Ring placement, 'gallery' composition. The dials are FRAME-ANCHORED — their
+// geometry does not track the face at all, which is what stopped two of the
+// three from hanging off a portrait stage.
 //
-// The dials are now FRAME-ANCHORED — their geometry does not track the face at
-// all. That is the whole fix. Face-relative placement is what pushed the nose
-// and eye rings half off-screen: a ring wide enough to be worth spinning is
-// already ~85% of a phone's width, so any `dx` offset from the face threw it
-// past an edge, and the tall axis of a portrait stage went unused. Hung off the
-// frame opening instead, all three read as complete circles on every phone and
-// the sitter simply moves around inside them.
+// Since 2026-08-11 they orbit OUTSIDE the picture rather than behind a sitter
+// who could cover them. Two consequences:
+//   - they may bleed past the stage edges. That is now allowed, and reads as
+//     "the collage continues past the page". What must never happen is a
+//     dial's sprites disappearing behind the picture;
+//   - so the clamp is on the SPRITES, not the ring: the parts sit at cx ± r,
+//     and those two columns have to clear the picture's left and right edges.
 export const RING_COMPOSITION: {mode: 'gallery'} = {mode: 'gallery'};
 
-// Screen reserves the ring geometry must respect (CSS px inside the frame):
-// the Waku host nav band plus the gilt rail at the top, the rail at the floor.
-// The old top value also reserved the fix-07 tuning pill, which is gone.
-export const LAYOUT_RESERVE = {top: 96, bottom: 40};
+// Top reserve: the Waku host nav band plus a breath. There is no outer gilt
+// frame any more, so nothing else eats the edges.
+export const LAYOUT_RESERVE = {top: 70, bottom: 24};
 
-// Gilt rail as a fraction of stage width — must stay in step with
-// --surgery-frame-rail in index.css, or rings will slide under the moulding.
-const FRAME_RAIL = 0.087;
-// Ring diameter (tube included) against the frame opening. Below 1 on purpose:
-// the slack is what buys the lateral stagger that keeps the stack from reading
-// like three identical stacked hoops.
-const RING_FILL = 0.88;
-// Tube half-thickness as a fraction of r (Dial's TUBE_R) — the drawn ring is
-// r * (1 + TUBE_R) across, and clamping on r alone slides the glass edge under
-// the frame.
-const TUBE_OUTSET = 1.125;
+// Ring radius as a fraction of stage width. Big enough that the sprite columns
+// at cx ± r fall outside the picture — that is the whole constraint.
+const RING_R = 0.436;
+const TUBE_OUTSET = 1.125; // drawn ring is r * this across (Dial's TUBE_R)
 
-// Row positions as fractions of the stage. cx is clamped against the opening,
-// so these are intents, not promises.
 const GALLERY_ROWS: Record<PartKind, {cx: number; cy: number}> = {
-  eye: {cx: 0.455, cy: 0.255},
-  nose: {cx: 0.545, cy: 0.5},
-  mouth: {cx: 0.472, cy: 0.775},
+  eye: {cx: 0.454, cy: 0.26},
+  nose: {cx: 0.526, cy: 0.5},
+  mouth: {cx: 0.477, cy: 0.8},
 };
 
-// On-screen half-extents of a ring, tube included and rotation accounted for.
+// On-screen half-extents of a drawn ring, tube included and rotation applied.
 function ringExtent(kind: PartKind, r: number): {hw: number; hh: number} {
   const {theta, squash} = RING_POSE[kind];
   const rx = r * TUBE_OUTSET;
   const ry = r * squash * TUBE_OUTSET;
   const cos = Math.abs(Math.cos(theta));
   const sin = Math.abs(Math.sin(theta));
-  return {
-    hw: Math.hypot(rx * cos, ry * sin),
-    hh: Math.hypot(rx * sin, ry * cos),
-  };
+  return {hw: Math.hypot(rx * cos, ry * sin), hh: Math.hypot(rx * sin, ry * cos)};
 }
 
 export function ringSpecs(box: FaceBox, viewW: number, viewH: number): Record<PartKind, RingSpec> {
   void box; // frame-anchored by design — see the note above
-  const rail = viewW * FRAME_RAIL;
-  const opening = viewW - rail * 2;
-  const r = Math.max(48, ((opening / 2) * RING_FILL) / TUBE_OUTSET);
+  const r = Math.max(48, viewW * RING_R);
+  const pic = pictureRect(viewW, viewH);
   const out = {} as Record<PartKind, RingSpec>;
   (Object.keys(GALLERY_ROWS) as PartKind[]).forEach((kind) => {
     const row = GALLERY_ROWS[kind];
-    const {hw, hh} = ringExtent(kind, r);
-    const loX = rail + hw;
-    const hiX = viewW - rail - hw;
-    const loY = Math.max(LAYOUT_RESERVE.top, rail) + hh;
-    const hiY = viewH - Math.max(LAYOUT_RESERVE.bottom, rail) - hh;
+    const {hh} = ringExtent(kind, r);
+    // Keep BOTH sprite columns clear of the picture. Left column at cx - r
+    // must finish left of the picture; right column at cx + r must start right
+    // of it. A sprite is about half its own width past that, but the columns
+    // are what读 as the dial, so clamping the centres is enough.
+    const loX = pic.x + pic.w - r;
+    const hiX = pic.x + r;
     const clamp = (v: number, lo: number, hi: number) =>
       lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v));
-    out[kind] = {
-      cx: clamp(viewW * row.cx, loX, hiX),
-      cy: clamp(viewH * row.cy, loY, hiY),
-      r,
-    };
+    const cy = clamp(
+      viewH * row.cy,
+      Math.max(LAYOUT_RESERVE.top + hh, hh * 0.35),
+      viewH - LAYOUT_RESERVE.bottom - hh * 0.35,
+    );
+    out[kind] = {cx: clamp(viewW * row.cx, loX, hiX), cy, r};
   });
   return out;
 }
