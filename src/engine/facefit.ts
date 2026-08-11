@@ -42,49 +42,79 @@ export function coverTransform(
 // of register when this changes. Safe range ~0.45–0.80.
 export const SITTER = {
   zoom: 0.58,
-  // Bounded float (player call 2026-08-10). Pinned dead to the floor, the
-  // camera rect is `zoom` of the stage tall, so the face could never rise
-  // above 42% of the screen no matter how the player moved. The rect may now
-  // lift off the floor by up to `floatMax`, which buys the face roughly the
-  // top 72% of the stage. It is a BOUND, not a free float: everything the
-  // rect uncovers at the bottom has to be faked back in (see
-  // CollageEngine.drawPersonCutout), and the further it lifts the more of the
-  // torso is invention rather than camera.
-  floatMax: 120,
-  // Lift ramps in only once the face is above this normalized height in the
-  // video frame — a player framed mid-shot gets the plain pinned rect.
-  liftFrom: 0.45,
+  // The face is PARKED on the stage, not left wherever the player's framing
+  // puts it (player call 2026-08-10, superseding the bounded float). The
+  // camera rect is panned every frame so the face box centre lands on this
+  // anchor — which happens to be the middle dial's own centre — so the three
+  // dials read in anatomical order around the player: eyes above, nose around,
+  // mouth below. Left free, the sitter drifted to the bottom of the stage and
+  // the correspondence read as noise.
+  anchorX: 0.5,
+  anchorY: 0.5,
+  // Cap on how far the rect may lift off the stage floor while centring.
+  // Everything it uncovers at the bottom is invented by extendTorso, so this
+  // is really a stretch budget: 230 parks any face framed down to ~0.61 of the
+  // video height exactly, and holds the worst normal-case torso stretch near
+  // 2x. Past that the face parks as close as it can and sits a little low —
+  // which also nudges the player to raise the phone.
+  maxLift: 230,
   // Exponential ease per second. The rect must never twitch: the whole sitter
   // and every landmark ride on it.
-  liftEase: 5,
+  panEase: 5,
 };
 
-// Target lift for a face at normalized height `faceNormY` (0 = top of frame).
-// Monotonic with the player's head: raising the head always raises the face on
-// screen, just with extra gain in the upper half.
-export function sitterLift(faceNormY: number): number {
-  const t = (SITTER.liftFrom - faceNormY) / SITTER.liftFrom;
-  return SITTER.floatMax * Math.min(1, Math.max(0, t));
+export interface SitterPan {
+  dx: number;
+  dy: number;
 }
 
-// Camera rect: cover x zoom, centred horizontally, sitting `lift` above the
-// stage floor. Keep this SEPARATE from coverTransform — they were one function
-// until the zoom landed, and sharing it silently shrank the painted backdrop.
+export const NO_PAN: SitterPan = {dx: 0, dy: 0};
+
+// Pan that parks a face at normalized video position (fx, fy) on the stage
+// anchor, clamped two ways:
+//   x — never past the point where the camera rect would stop covering the
+//       stage, so no bare edge can slide into frame;
+//   y — never lifts more than SITTER.maxLift off the floor. Sinking BELOW the
+//       floor is unbounded and free: it uncovers nothing.
+export function sitterPan(
+  fx: number,
+  fy: number,
+  videoW: number,
+  videoH: number,
+  viewW: number,
+  viewH: number,
+): SitterPan {
+  const scale = Math.max(viewW / videoW, viewH / videoH) * SITTER.zoom;
+  const baseX = (viewW - videoW * scale) / 2;
+  const baseY = viewH - videoH * scale;
+  // The video is drawn mirrored, so screenX = viewW - (offX + fx*videoW*scale).
+  const wantX = viewW * (1 - SITTER.anchorX) - fx * videoW * scale;
+  const wantY = viewH * SITTER.anchorY - fy * videoH * scale;
+  const slackX = Math.max(0, (videoW * scale - viewW) / 2);
+  return {
+    dx: Math.min(slackX, Math.max(-slackX, wantX - baseX)),
+    dy: Math.max(-SITTER.maxLift, wantY - baseY),
+  };
+}
+
+// Camera rect: cover x zoom, floor-anchored and centred, plus `pan`. Keep this
+// SEPARATE from coverTransform — they were one function until the zoom landed,
+// and sharing it silently shrank the painted backdrop too.
 export function sitterTransform(
   videoW: number,
   videoH: number,
   viewW: number,
   viewH: number,
-  lift = 0,
+  pan: SitterPan = NO_PAN,
 ): CoverTransform {
   const scale = Math.max(viewW / videoW, viewH / videoH) * SITTER.zoom;
   return {
     scale,
-    offX: (viewW - videoW * scale) / 2,
-    // Floor-anchored by default. A rect scaled below cover and merely centred
-    // would end partway up the stage and chop the segmented torso off along a
-    // dead straight horizontal line.
-    offY: viewH - videoH * scale - lift,
+    offX: (viewW - videoW * scale) / 2 + pan.dx,
+    // Floor-anchored before the pan. A rect scaled below cover and merely
+    // centred would end partway up the stage and chop the segmented torso off
+    // along a dead straight horizontal line.
+    offY: viewH - videoH * scale + pan.dy,
     viewW,
     viewH,
   };
@@ -207,10 +237,15 @@ export function faceAnchors(pts: Pt[]): FaceAnchors {
 }
 
 // Default anchors when no face is available (ready-without-face / fallback):
-// an abstract head, sized and placed to match where a real sitter lands under
-// SITTER.zoom — low and small, inside the ring stack.
+// an abstract head, sized and placed where a real sitter gets parked — on the
+// stage anchor, small, inside the middle dial.
 export function defaultAnchors(viewW: number, viewH: number): FaceAnchors {
-  const box: FaceBox = {cx: viewW * 0.5, cy: viewH * 0.57, w: viewW * 0.23, h: viewW * 0.3};
+  const box: FaceBox = {
+    cx: viewW * SITTER.anchorX,
+    cy: viewH * SITTER.anchorY,
+    w: viewW * 0.23,
+    h: viewW * 0.3,
+  };
   const eyeW = box.w * 0.44;
   const noseH = box.h * 0.4;
   const mouthW = box.w * 0.44;

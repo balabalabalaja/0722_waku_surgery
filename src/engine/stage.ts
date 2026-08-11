@@ -11,8 +11,9 @@ import {
   lerp,
   ringSpecs,
   SITTER,
-  sitterLift,
+  sitterPan,
   sitterTransform,
+  type SitterPan,
   videoToScreen,
   type CoverTransform,
   type FaceAnchors,
@@ -107,7 +108,7 @@ export class CollageEngine {
   private targetAnchors: FaceAnchors;
   private rings: Record<PartKind, RingSpec>;
   private meshPts: Pt[] = [];
-  private sitterLift = 0; // eased camera-rect lift off the stage floor
+  private pan: SitterPan = {dx: 0, dy: 0}; // eased camera-rect pan that parks the face
   private lastFaceAt = -Infinity;
   faceVisible = false;
 
@@ -419,21 +420,26 @@ export class CollageEngine {
 
     // Vision
     const res = this.vision.detect(now);
-    // Camera-rect lift, resolved BEFORE the landmarks are mapped so the sitter
+    // Camera-rect pan, resolved BEFORE the landmarks are mapped so the sitter
     // and every anchor ride the exact same rect this frame. Eased hard: the
-    // whole person moves with it. Falls back to the pinned rect with no face.
-    const targetLift = res.face
-      ? sitterLift((res.face[IDX_FACE_TOP].y + res.face[IDX_CHIN].y) / 2)
-      : 0;
-    this.sitterLift = lerp(this.sitterLift, targetLift, 1 - Math.exp(-SITTER.liftEase * dt));
+    // whole person moves with it. With no face it drifts back to the plain
+    // floor-pinned rect.
+    const vW = this.vision.video.videoWidth;
+    const vH = this.vision.video.videoHeight;
+    const target = res.face
+      ? sitterPan(
+          (res.face[IDX_FACE_TOP].x + res.face[IDX_CHIN].x) / 2,
+          (res.face[IDX_FACE_TOP].y + res.face[IDX_CHIN].y) / 2,
+          vW,
+          vH,
+          this.viewW,
+          this.viewH,
+        )
+      : {dx: 0, dy: 0};
+    const kp = 1 - Math.exp(-SITTER.panEase * dt);
+    this.pan = {dx: lerp(this.pan.dx, target.dx, kp), dy: lerp(this.pan.dy, target.dy, kp)};
     if (res.face) {
-      const t = sitterTransform(
-        this.vision.video.videoWidth,
-        this.vision.video.videoHeight,
-        this.viewW,
-        this.viewH,
-        this.sitterLift,
-      );
+      const t = sitterTransform(vW, vH, this.viewW, this.viewH, this.pan);
       const pts = res.face.map((lm) =>
         videoToScreen(lm, this.vision.video.videoWidth, this.vision.video.videoHeight, t),
       );
@@ -657,7 +663,7 @@ export class CollageEngine {
 
   private drawVideoCover(ctx: CanvasRenderingContext2D) {
     const v = this.vision.video;
-    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH, this.sitterLift);
+    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH, this.pan);
     ctx.save();
     ctx.translate(this.viewW, 0);
     ctx.scale(-1, 1);
@@ -779,7 +785,7 @@ export class CollageEngine {
       pc.height = this.canvas.height;
     }
     const pctx = pc.getContext('2d')!;
-    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH, this.sitterLift);
+    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH, this.pan);
     pctx.save();
     pctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     pctx.clearRect(0, 0, this.viewW, this.viewH);
@@ -814,7 +820,11 @@ export class CollageEngine {
   private extendTorso(pctx: CanvasRenderingContext2D, rectBottom: number) {
     const gap = this.viewH - rectBottom;
     if (gap <= 1) return;
-    const srcH = Math.min(Math.max(gap * 0.72, 24), rectBottom);
+    // The band must be TORSO. Parking the face can lift the rect far enough
+    // that a gap-proportional band would reach up past the chin and stamp a
+    // second jaw down the player's chest.
+    const chin = this.anchors.box.cy + this.anchors.box.h / 2;
+    const srcH = Math.min(Math.max(gap * 0.72, 24), Math.max(12, rectBottom - chin - 8), rectBottom);
     if (srcH <= 0) return;
     const pc = this.personCanvas!;
     pctx.drawImage(

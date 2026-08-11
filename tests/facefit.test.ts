@@ -7,7 +7,7 @@ import {
   defaultAnchors,
   faceAnchors,
   ringSpecs,
-  sitterLift,
+  sitterPan,
   sitterTransform,
   videoToScreen,
   type Pt,
@@ -23,45 +23,72 @@ test('the painted backdrop keeps a plain full-bleed cover fit', () => {
   assert.ok(Math.abs(t.offY * 2 + 1600 * t.scale - 844) < 1e-6, 'centred on y');
 });
 
-test('bounded float: lift ramps in only as the player raises their head', () => {
-  // Pinned while the face sits mid-frame or lower, full lift at the top.
-  assert.equal(sitterLift(0.9), 0);
-  assert.equal(sitterLift(SITTER.liftFrom), 0);
-  assert.equal(sitterLift(0), SITTER.floatMax);
-  assert.ok(sitterLift(0.2) > 0 && sitterLift(0.2) < SITTER.floatMax);
-  // Raising the head must ALWAYS raise the face on screen — the lift adds gain
-  // in the upper half, it must not overtake and invert the mapping.
-  const rectH = 844 * SITTER.zoom;
-  const screenY = (n: number) => 844 - rectH - sitterLift(n) + n * rectH;
-  let prev = -Infinity;
-  for (let n = 0; n <= 1.0001; n += 0.05) {
-    const y = screenY(n);
-    assert.ok(y > prev, `face must rise monotonically, broke at faceNormY=${n.toFixed(2)}`);
-    prev = y;
-  }
-  // ...and the reachable band is the top-72%-ish the bounded float promises.
-  assert.ok(screenY(0) < 844 * 0.3, `face should reach the top third, got ${screenY(0)}`);
-});
-
-test('camera rect is cover x SITTER.zoom, centred on x and pinned to the floor', () => {
+test('unpanned camera rect is cover x SITTER.zoom, centred on x, on the floor', () => {
   // 1280x720 video into a 390x844 portrait view: height-limited.
   const t = sitterTransform(1280, 720, 390, 844);
   assert.ok(Math.abs(720 * t.scale - 844 * SITTER.zoom) < 1e-6, 'zoomed below cover');
   assert.ok(t.offX < 0, 'sides still crop off-screen');
-  // Bottom edge sits exactly on the stage floor — a centred rect would chop
-  // the torso along a straight line partway up the screen.
-  assert.ok(Math.abs(t.offY + 720 * t.scale - 844) < 1e-6, 'bottom-anchored with no lift');
-  // A lift raises the rect by exactly that many pixels, nothing else moves.
-  const lifted = sitterTransform(1280, 720, 390, 844, 90);
-  assert.equal(lifted.scale, t.scale);
-  assert.equal(lifted.offX, t.offX);
-  assert.ok(Math.abs(lifted.offY - (t.offY - 90)) < 1e-6);
+  // Bottom edge sits exactly on the stage floor — a merely centred rect would
+  // chop the torso along a straight line partway up the screen.
+  assert.ok(Math.abs(t.offY + 720 * t.scale - 844) < 1e-6, 'floor-anchored, no pan');
+  // A pan translates the rect and nothing else.
+  const panned = sitterTransform(1280, 720, 390, 844, {dx: -12, dy: -90});
+  assert.equal(panned.scale, t.scale);
+  assert.ok(Math.abs(panned.offX - (t.offX - 12)) < 1e-6);
+  assert.ok(Math.abs(panned.offY - (t.offY - 90)) < 1e-6);
   // Mirroring stays symmetric about the centre.
   const c = videoToScreen({x: 0.5, y: 0.5}, 1280, 720, t);
   assert.ok(Math.abs(c.x - 195) < 1e-6);
   // A landmark on the video's left lands on the screen's right (mirror).
   const l = videoToScreen({x: 0.1, y: 0.5}, 1280, 720, t);
   assert.ok(l.x > 195);
+});
+
+// Where a face at normalized (fx, fy) actually lands on the stage once the pan
+// has parked it. Mirrored on x, same as videoToScreen.
+function parked(fx: number, fy: number, vw = 1280, vh = 720, W = 390, H = 844) {
+  const pan = sitterPan(fx, fy, vw, vh, W, H);
+  const t = sitterTransform(vw, vh, W, H, pan);
+  return {x: W - (t.offX + fx * vw * t.scale), y: t.offY + fy * vh * t.scale, pan, t};
+}
+
+test('the face parks on the stage anchor across normal framing', () => {
+  // Anywhere a player normally holds a phone, the face lands dead on the
+  // anchor — which is the middle dial's centre, so the dials read in order.
+  // Beyond about +-0.28 off-centre in x the horizontal slack runs out and the
+  // face parks as close as it can rather than exposing a bare rect edge.
+  for (let fy = 0.25; fy <= 0.58001; fy += 0.055) {
+    for (const fx of [0.3, 0.5, 0.7]) {
+      const {x, y} = parked(fx, fy);
+      assert.ok(Math.abs(x - 390 * SITTER.anchorX) < 0.5, `x off at ${fx},${fy}: ${x}`);
+      assert.ok(Math.abs(y - 844 * SITTER.anchorY) < 0.5, `y off at ${fx},${fy}: ${y}`);
+    }
+  }
+});
+
+test('a face framed very low parks as far as the lift cap allows, then stops', () => {
+  // Chin-up framing wants more lift than maxLift, because every pixel of lift
+  // is torso that extendTorso has to invent. The residual is bounded and lands
+  // BELOW the anchor — never above it, and never a wild jump.
+  const low = parked(0.5, 0.75);
+  assert.ok(Math.abs(low.pan.dy + SITTER.maxLift) < 1e-9, 'the cap is what binds');
+  const drop = low.y - 844 * SITTER.anchorY;
+  assert.ok(drop > 0, 'residual sits below the anchor');
+  assert.ok(drop < 190, `residual should stay modest, got ${drop}`);
+  // x is unaffected: it has real slack and always parks.
+  assert.ok(Math.abs(low.x - 390 * SITTER.anchorX) < 0.5);
+});
+
+test('parking never uncovers more than SITTER.maxLift, nor a bare side edge', () => {
+  for (let fx = 0; fx <= 1.0001; fx += 0.1) {
+    for (let fy = 0; fy <= 1.0001; fy += 0.1) {
+      const {pan, t} = parked(fx, fy);
+      assert.ok(pan.dy >= -SITTER.maxLift - 1e-9, `lift ${pan.dy} exceeds the cap`);
+      // The rect must still span the stage horizontally at every extreme.
+      assert.ok(t.offX <= 1e-9, `left edge exposed at fx=${fx.toFixed(1)}`);
+      assert.ok(t.offX + 1280 * t.scale >= 390 - 1e-9, `right edge exposed at fx=${fx.toFixed(1)}`);
+    }
+  }
 });
 
 // Synthetic landmark cloud: enough indices for faceAnchors.
@@ -150,10 +177,14 @@ test('the dials are frame-anchored — the face box cannot move them', () => {
   assert.ok(near.eye.cy < near.nose.cy && near.nose.cy < near.mouth.cy);
 });
 
-test('default anchors put a small sitter low, inside the ring stack', () => {
+test('default anchors put a small sitter on the anchor, inside the middle dial', () => {
   const a = defaultAnchors(390, 844);
   const rings = ringSpecs(a.box, 390, 844);
   assert.ok(a.box.w < 390 * 0.3, 'sitter is narrower than the dials');
   assert.ok(a.box.w * 1.6 < rings.nose.r * 2, 'dials read bigger than the sitter');
-  assert.ok(a.box.cy > 844 * 0.45, 'sitter sits low, as the bottom-anchored camera puts them');
+  // The faceless fallback must sit where a parked real face sits, or the
+  // no-camera composition and the live one disagree.
+  assert.equal(a.box.cx, 390 * SITTER.anchorX);
+  assert.equal(a.box.cy, 844 * SITTER.anchorY);
+  assert.ok(Math.abs(a.box.cy - rings.nose.cy) < 844 * 0.02, 'lands in the middle dial');
 });
