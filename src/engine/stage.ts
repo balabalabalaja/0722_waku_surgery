@@ -31,13 +31,6 @@ const KINDS: PartKind[] = ['eye', 'nose', 'mouth'];
 const IDX_FACE_TOP = 10;
 const IDX_CHIN = 152;
 
-// Profile of the torn edge: a deterministic wobble, scaled by stage width.
-// Hand-picked rather than random so the tear is identical every frame — one
-// that reshuffles reads as a rendering fault. TEAR_AMP is what makes it read
-// as a tear at all; at 0.04 it came out ±4px, i.e. a straight line with a
-// stutter, which looks like a bug rather than a decision.
-const TEAR = [0.05, -0.22, 0.14, -0.08, 0.26, -0.15, 0.07, -0.28, 0.18, -0.05, 0.22, -0.19, 0.09];
-const TEAR_AMP = 0.12; // x stage width -> about ±13px on a 390pt phone
 
 // Feel tuning lives in one place for Harden's calibration pass.
 export const TUNING = {
@@ -809,54 +802,10 @@ export class CollageEngine {
       pctx.drawImage(personFallbackMask(), b.cx - w / 2, b.cy - h * 0.28, w, h);
     }
     pctx.globalCompositeOperation = 'source-over';
-    this.applyTornBottom(pctx, t.offY + v.videoHeight * t.scale);
     pctx.restore();
     ctx.drawImage(pc, 0, 0, this.viewW, this.viewH);
   }
 
-  // The sitter ends on a deliberate torn edge rather than wherever the camera
-  // rect happens to stop.
-  //
-  // Parking the face lifts the rect off the stage floor, so the segmented body
-  // would otherwise stop dead along that straight horizontal line. The first
-  // attempt continued the torso by stretching the band above the cut downward;
-  // it shipped and was rejected on sight, and correctly — a band drawn from
-  // its own top edge JUMPS BACK by the band height at the seam, so a jacket
-  // collar reappeared halfway down the chest. Every variant of that trick is
-  // either a duplicate or a smear.
-  //
-  // So stop pretending the body continues. Tear it, in the same torn-fragment
-  // language every painted eye, nose and mouth in this piece already uses.
-  //
-  // The tear RIDES the rect's bottom instead of sitting at a fixed height, so
-  // it exists only when there is actually a cut to hide: a sitter that needs
-  // no lift is not trimmed at all, and one lifted the full 230 gets the tear
-  // exactly where the straight edge would have been. In practice the lift is a
-  // function of how the player holds the phone, so it is stable while they are.
-  private applyTornBottom(pctx: CanvasRenderingContext2D, rectBottom: number) {
-    if (rectBottom >= this.viewH) return; // nothing exposed, nothing to hide
-    const amp = this.viewW * TEAR_AMP;
-    const at = (i: number) => rectBottom + TEAR[i] * amp;
-    const path = new Path2D();
-    path.moveTo(0, at(0));
-    for (let i = 1; i < TEAR.length; i++) {
-      const x = (i / (TEAR.length - 1)) * this.viewW;
-      const cx = ((i - 0.5) / (TEAR.length - 1)) * this.viewW;
-      path.quadraticCurveTo(cx, rectBottom + ((TEAR[i - 1] + TEAR[i]) * 0.5 + TEAR[i] * 0.5) * amp, x, at(i));
-    }
-    path.lineTo(this.viewW, this.viewH);
-    path.lineTo(0, this.viewH);
-    path.closePath();
-    pctx.globalCompositeOperation = 'destination-out';
-    pctx.fill(path);
-    // A torn sheet has a darker bite along the break. `source-atop` keeps it
-    // strictly inside what is left of the sitter, so it hugs the new edge.
-    pctx.globalCompositeOperation = 'source-atop';
-    pctx.strokeStyle = 'rgba(38,26,14,0.5)';
-    pctx.lineWidth = 3;
-    pctx.stroke(path);
-    pctx.globalCompositeOperation = 'source-over';
-  }
 
   // Abstract sitter drawn ABOVE the rings (it plays the person's layer role
   // in the no-camera world).

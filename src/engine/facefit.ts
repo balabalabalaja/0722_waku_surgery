@@ -30,18 +30,25 @@ export function coverTransform(
   };
 }
 
-// The sitter is deliberately SMALL (player call 2026-08-10). The composition
-// only works when the dials read bigger than the person — the reference has a
-// disc-to-sitter width ratio around 1.7:1, while a full-bleed cover camera put
-// the person at 0.95:1, which is why two of the three rings could never fit on
-// screen no matter how they were posed.
+// `zoom` is the single knob for the sitter's size. Everything that places them
+// — the video draw, the segmentation mask and all 468 landmarks (and so the
+// part windows anchored to them) — goes through sitterTransform, so nothing
+// can drift out of register when it changes.
 //
-// `zoom` is the single knob. Everything that places the sitter — the video
-// draw, the segmentation mask and all 468 landmarks (and so the part windows
-// anchored to them) — goes through sitterTransform, so nothing can drift out
-// of register when this changes. Safe range ~0.45–0.80.
+// It is 1 (plain cover), and that is forced, not a preference. The player's
+// standing requirement is that the BODY IS REAL ALL THE WAY DOWN — no faked
+// continuation at the bottom of the stage. The camera rect is `zoom` of the
+// stage tall, so anything below 1 leaves a strip the camera cannot fill:
+// 0.92 already exposes 68px. Two attempts to fill that strip were rejected on
+// sight (a stretched torso that duplicated a jacket collar, then a torn edge),
+// and they were rejected correctly — both are invention.
+//
+// The cost is real and was paid knowingly: a cover-sized sitter is wide enough
+// to hide much of the bottom dial behind their shoulders. Shrinking them again
+// brings the strip straight back. Face centred / small sitter / real body to
+// the floor: pick two.
 export const SITTER = {
-  zoom: 0.58,
+  zoom: 1,
   // The face is PARKED on the stage, not left wherever the player's framing
   // puts it (player call 2026-08-10, superseding the bounded float). The
   // camera rect is panned every frame so the face box centre lands on this
@@ -51,13 +58,12 @@ export const SITTER = {
   // the correspondence read as noise.
   anchorX: 0.5,
   anchorY: 0.5,
-  // Cap on how far the rect may lift off the stage floor while centring.
-  // Everything it uncovers at the bottom is invented by extendTorso, so this
-  // is really a stretch budget: 230 parks any face framed down to ~0.61 of the
-  // video height exactly, and holds the worst normal-case torso stretch near
-  // 2x. Past that the face parks as close as it can and sits a little low —
-  // which also nudges the player to raise the phone.
-  maxLift: 230,
+  // The rect may NEVER lift off the stage floor — a lift is exactly the gap
+  // that has to be faked. Parking therefore only ever corrects a face DOWNWARD
+  // onto the anchor (sinking is free: it uncovers nothing, it just shows more
+  // painted room above the head). A player framed low simply sits low, which
+  // is honest and also nudges them to raise the phone.
+  maxLift: 0,
   // Exponential ease per second. The rect must never twitch: the whole sitter
   // and every landmark ride on it.
   panEase: 5,
@@ -243,8 +249,8 @@ export function defaultAnchors(viewW: number, viewH: number): FaceAnchors {
   const box: FaceBox = {
     cx: viewW * SITTER.anchorX,
     cy: viewH * SITTER.anchorY,
-    w: viewW * 0.23,
-    h: viewW * 0.3,
+    w: viewW * 0.36,
+    h: viewW * 0.47,
   };
   const eyeW = box.w * 0.44;
   const noseH = box.h * 0.4;

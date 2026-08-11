@@ -52,12 +52,10 @@ function parked(fx: number, fy: number, vw = 1280, vh = 720, W = 390, H = 844) {
   return {x: W - (t.offX + fx * vw * t.scale), y: t.offY + fy * vh * t.scale, pan, t};
 }
 
-test('the face parks on the stage anchor across normal framing', () => {
-  // Anywhere a player normally holds a phone, the face lands dead on the
-  // anchor — which is the middle dial's centre, so the dials read in order.
-  // Beyond about +-0.28 off-centre in x the horizontal slack runs out and the
-  // face parks as close as it can rather than exposing a bare rect edge.
-  for (let fy = 0.25; fy <= 0.58001; fy += 0.055) {
+test('parking pulls a high-framed face DOWN onto the anchor, exactly', () => {
+  // Sinking the rect is free — it uncovers nothing at the floor — so any face
+  // sitting above the anchor gets corrected onto it.
+  for (let fy = 0.1; fy <= 0.5001; fy += 0.08) {
     for (const fx of [0.3, 0.5, 0.7]) {
       const {x, y} = parked(fx, fy);
       assert.ok(Math.abs(x - 390 * SITTER.anchorX) < 0.5, `x off at ${fx},${fy}: ${x}`);
@@ -66,17 +64,16 @@ test('the face parks on the stage anchor across normal framing', () => {
   }
 });
 
-test('a face framed very low parks as far as the lift cap allows, then stops', () => {
-  // Chin-up framing wants more lift than maxLift, because every pixel of lift
-  // is torso that extendTorso has to invent. The residual is bounded and lands
-  // BELOW the anchor — never above it, and never a wild jump.
-  const low = parked(0.5, 0.75);
-  assert.ok(Math.abs(low.pan.dy + SITTER.maxLift) < 1e-9, 'the cap is what binds');
-  const drop = low.y - 844 * SITTER.anchorY;
-  assert.ok(drop > 0, 'residual sits below the anchor');
-  assert.ok(drop < 190, `residual should stay modest, got ${drop}`);
-  // x is unaffected: it has real slack and always parks.
-  assert.ok(Math.abs(low.x - 390 * SITTER.anchorX) < 0.5);
+test('parking never lifts the rect off the floor, whatever the framing', () => {
+  // A lift IS the gap that would have to be faked, and faking it was rejected
+  // twice. So a low-framed face sits low rather than buying a strip of
+  // invented torso; the rect's bottom stays at or below the stage floor.
+  for (let fy = 0; fy <= 1.0001; fy += 0.05) {
+    const {pan, t, y} = parked(0.5, fy);
+    assert.ok(pan.dy >= -1e-9, `rect lifted by ${-pan.dy} at fy=${fy.toFixed(2)}`);
+    assert.ok(t.offY + 720 * t.scale >= 844 - 1e-6, 'camera reaches the stage floor');
+    assert.ok(y >= 844 * SITTER.anchorY - 0.5, 'never parked above the anchor');
+  }
 });
 
 test('parking never uncovers more than SITTER.maxLift, nor a bare side edge', () => {
@@ -180,8 +177,7 @@ test('the dials are frame-anchored — the face box cannot move them', () => {
 test('default anchors put a small sitter on the anchor, inside the middle dial', () => {
   const a = defaultAnchors(390, 844);
   const rings = ringSpecs(a.box, 390, 844);
-  assert.ok(a.box.w < 390 * 0.3, 'sitter is narrower than the dials');
-  assert.ok(a.box.w * 1.6 < rings.nose.r * 2, 'dials read bigger than the sitter');
+  assert.ok(a.box.w < rings.nose.r * 2, 'a head still fits inside a dial');
   // The faceless fallback must sit where a parked real face sits, or the
   // no-camera composition and the live one disagree.
   assert.equal(a.box.cx, 390 * SITTER.anchorX);
