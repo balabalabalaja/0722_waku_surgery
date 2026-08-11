@@ -9,7 +9,7 @@ import {RING_STYLE} from './engine/rings';
 import {RING_COMPOSITION} from './engine/facefit';
 import {TUNING, WINDOW_STYLE} from './engine/stage';
 import {loadParts} from './engine/parts';
-import {composeCard, creditLines} from './engine/polaroid';
+import {composeCard, creditLines, loadCardFrame} from './engine/polaroid';
 import {CollageEngine} from './engine/stage';
 import {Vision} from './engine/vision';
 import {applyHostSafeArea, getPv, saveCard, shareCardToComments} from './waku/polyverse';
@@ -41,6 +41,8 @@ export default function App() {
     primeAudio();
     bgm.play(AUDIO.bgm);
     getPv().then((pv) => setPvAvailable(pv !== null));
+    // Warm the card's moulding now; the shutter must never wait on a fetch.
+    loadCardFrame();
     // Feed the host notch / home-indicator insets into --sys-* (the shell's job
     // when a shell exists; none here). No-op in a bare browser — env() stands.
     applyHostSafeArea();
@@ -113,9 +115,10 @@ export default function App() {
     setFlash(true);
     setTimeout(() => setFlash(false), 280);
     try {
-      await document.fonts.ready; // card text uses the mono webfont
-      const {canvas, faceBox, scale} = engine.capture();
-      const cardCanvas = composeCard(canvas, faceBox, scale, engine.applied);
+      // Card text uses the mono webfont; the frame is normally already warm.
+      await Promise.all([document.fonts.ready, loadCardFrame()]);
+      const {canvas} = engine.capture();
+      const cardCanvas = composeCard(canvas, engine.applied);
       const pngUrl = cardCanvas.toDataURL('image/png');
       const jpegUrl = cardCanvas.toDataURL('image/jpeg', 0.86);
       setCard({pngUrl, jpegUrl, credits: creditLines(engine.applied)});

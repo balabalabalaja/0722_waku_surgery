@@ -47,7 +47,7 @@ export default function ResultCard(props: ResultCardProps) {
       <img
         src={props.pngUrl}
         alt={props.altText}
-        className="max-h-[68%] max-w-[86%] object-contain -rotate-1 shadow-[0_30px_80px_rgba(0,0,0,0.6)] animate-card-slide rounded-[6px]"
+        className="max-h-[68%] max-w-[86%] object-contain shadow-[0_30px_80px_rgba(0,0,0,0.6)] animate-card-slide rounded-[3px]"
       />
       <div className="flex items-center gap-3 mt-7">
         <button

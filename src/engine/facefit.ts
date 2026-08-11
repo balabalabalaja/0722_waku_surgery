@@ -12,6 +12,8 @@ export interface CoverTransform {
   viewH: number;
 }
 
+// Plain cover fit, centred. This is the PAINTED ROOM's transform — the
+// backdrop must stay full-bleed no matter what the sitter does.
 export function coverTransform(
   videoW: number,
   videoH: number,
@@ -23,6 +25,41 @@ export function coverTransform(
     scale,
     offX: (viewW - videoW * scale) / 2,
     offY: (viewH - videoH * scale) / 2,
+    viewW,
+    viewH,
+  };
+}
+
+// The sitter is deliberately SMALL (player call 2026-08-10). The composition
+// only works when the dials read bigger than the person — the reference has a
+// disc-to-sitter width ratio around 1.7:1, while a full-bleed cover camera put
+// the person at 0.95:1, which is why two of the three rings could never fit on
+// screen no matter how they were posed.
+//
+// `zoom` is the single knob. Everything that places the sitter — the video
+// draw, the segmentation mask and all 468 landmarks (and so the part windows
+// anchored to them) — goes through sitterTransform, so nothing can drift out
+// of register when this changes. Safe range ~0.45–0.80.
+export const SITTER = {zoom: 0.58};
+
+// Camera rect: cover x zoom, centred horizontally, pinned to the stage floor.
+// Keep this SEPARATE from coverTransform — they were one function until the
+// zoom landed, and sharing it silently shrank the painted backdrop too.
+export function sitterTransform(
+  videoW: number,
+  videoH: number,
+  viewW: number,
+  viewH: number,
+): CoverTransform {
+  const scale = Math.max(viewW / videoW, viewH / videoH) * SITTER.zoom;
+  return {
+    scale,
+    offX: (viewW - videoW * scale) / 2,
+    // BOTTOM-anchored, not centred. A camera rect scaled below cover and then
+    // centred would end partway up the stage, and the segmented torso would be
+    // chopped off along a dead straight horizontal line. Pinned to the stage
+    // floor, the body just runs off the bottom edge like any painted bust.
+    offY: viewH - videoH * scale,
     viewW,
     viewH,
   };
@@ -145,9 +182,10 @@ export function faceAnchors(pts: Pt[]): FaceAnchors {
 }
 
 // Default anchors when no face is available (ready-without-face / fallback):
-// an abstract head centered slightly above screen middle, mockup proportions.
+// an abstract head, sized and placed to match where a real sitter lands under
+// SITTER.zoom — low and small, inside the ring stack.
 export function defaultAnchors(viewW: number, viewH: number): FaceAnchors {
-  const box: FaceBox = {cx: viewW * 0.5, cy: viewH * 0.4, w: viewW * 0.38, h: viewW * 0.5};
+  const box: FaceBox = {cx: viewW * 0.5, cy: viewH * 0.57, w: viewW * 0.23, h: viewW * 0.3};
   const eyeW = box.w * 0.44;
   const noseH = box.h * 0.4;
   const mouthW = box.w * 0.44;
@@ -159,89 +197,77 @@ export function defaultAnchors(viewW: number, viewH: number): FaceAnchors {
   };
 }
 
-// Ring placement relative to the face box. Two compositions, runtime-
-// switchable for player adjudication (fix-01 UI hard rule):
-// - 'large'  (default): ref-03 look — big discs BEHIND the person, pushed
-//   outboard so visible crescents show beside the head/body; partial frame
-//   bleed is canonical, but the interactive front-focus point stays on
-//   screen above the shutter zone.
-// - 'compact': the pre-fix foreground look — smaller dials held almost
-//   entirely inside the frame (ref-02 proportions).
-export const RING_COMPOSITION: {mode: 'large' | 'compact'} = {mode: 'large'};
+// Ring placement, 'gallery' composition (player call 2026-08-10, reference:
+// three complete plates stacked down the picture, each one bigger than the
+// sitter).
+//
+// The dials are now FRAME-ANCHORED — their geometry does not track the face at
+// all. That is the whole fix. Face-relative placement is what pushed the nose
+// and eye rings half off-screen: a ring wide enough to be worth spinning is
+// already ~85% of a phone's width, so any `dx` offset from the face threw it
+// past an edge, and the tall axis of a portrait stage went unused. Hung off the
+// frame opening instead, all three read as complete circles on every phone and
+// the sitter simply moves around inside them.
+export const RING_COMPOSITION: {mode: 'gallery'} = {mode: 'gallery'};
 
-// Screen reserves the ring geometry must respect (CSS px inside the frame).
-// top: Waku chrome band + the fix-07 top pill bar; bottom: shutter zone.
-// Harden calibrates against the platform shell.
-export const LAYOUT_RESERVE = {top: 120, bottom: 132};
+// Screen reserves the ring geometry must respect (CSS px inside the frame):
+// the Waku host nav band plus the gilt rail at the top, the rail at the floor.
+// The old top value also reserved the fix-07 tuning pill, which is gone.
+export const LAYOUT_RESERVE = {top: 96, bottom: 40};
 
-const RING_LAYOUT: Record<
-  'large' | 'compact',
-  Record<PartKind, {dx: number; dy: number; r: number}>
-> = {
-  compact: {
-    nose: {dx: -0.58, dy: -0.48, r: 0.52},
-    eye: {dx: 0.68, dy: 0.14, r: 0.48},
-    mouth: {dx: 0.0, dy: 0.96, r: 0.48},
-  },
-  large: {
-    nose: {dx: -0.85, dy: -0.55, r: 0.85},
-    eye: {dx: 0.95, dy: 0.08, r: 0.8},
-    // fix-04 #2 player correction: the mouth dial keeps its ref-02 chin
-    // position — visibility comes from its LAYER (drawn in front of the
-    // person), not from relocation.
-    mouth: {dx: 0.0, dy: 0.96, r: 0.8},
-  },
+// Gilt rail as a fraction of stage width — must stay in step with
+// --surgery-frame-rail in index.css, or rings will slide under the moulding.
+const FRAME_RAIL = 0.087;
+// Ring diameter (tube included) against the frame opening. Below 1 on purpose:
+// the slack is what buys the lateral stagger that keeps the stack from reading
+// like three identical stacked hoops.
+const RING_FILL = 0.88;
+// Tube half-thickness as a fraction of r (Dial's TUBE_R) — the drawn ring is
+// r * (1 + TUBE_R) across, and clamping on r alone slides the glass edge under
+// the frame.
+const TUBE_OUTSET = 1.125;
+
+// Row positions as fractions of the stage. cx is clamped against the opening,
+// so these are intents, not promises.
+const GALLERY_ROWS: Record<PartKind, {cx: number; cy: number}> = {
+  eye: {cx: 0.455, cy: 0.255},
+  nose: {cx: 0.545, cy: 0.5},
+  mouth: {cx: 0.472, cy: 0.775},
 };
 
-// Screen offset of a ring's selection-focus point from its centre.
-function focusOffset(kind: PartKind, r: number): {ox: number; oy: number} {
-  const {theta, squash, focus} = RING_POSE[kind];
-  const lx = r * Math.cos(focus);
-  const ly = r * Math.sin(focus) * squash;
+// On-screen half-extents of a ring, tube included and rotation accounted for.
+function ringExtent(kind: PartKind, r: number): {hw: number; hh: number} {
+  const {theta, squash} = RING_POSE[kind];
+  const rx = r * TUBE_OUTSET;
+  const ry = r * squash * TUBE_OUTSET;
+  const cos = Math.abs(Math.cos(theta));
+  const sin = Math.abs(Math.sin(theta));
   return {
-    ox: lx * Math.cos(theta) - ly * Math.sin(theta),
-    oy: lx * Math.sin(theta) + ly * Math.cos(theta),
+    hw: Math.hypot(rx * cos, ry * sin),
+    hh: Math.hypot(rx * sin, ry * cos),
   };
 }
 
 export function ringSpecs(box: FaceBox, viewW: number, viewH: number): Record<PartKind, RingSpec> {
+  void box; // frame-anchored by design — see the note above
+  const rail = viewW * FRAME_RAIL;
+  const opening = viewW - rail * 2;
+  const r = Math.max(48, ((opening / 2) * RING_FILL) / TUBE_OUTSET);
   const out = {} as Record<PartKind, RingSpec>;
-  const mode = RING_COMPOSITION.mode;
-  const layout = RING_LAYOUT[mode];
-  // Extreme close-ups (face filling the frame) leave no silhouette-free
-  // space at normal radii — grow the discs so their arcs still clear the
-  // person at the frame corners/edges (fix-04 #2 stable visible arc).
-  const closeUp = Math.min(1, Math.max(0, (box.w / viewW - 0.55) / 0.3));
-  const rMax = Math.min(viewW, viewH) * (mode === 'large' ? 0.42 + 0.14 * closeUp : 0.28);
-  (Object.keys(layout) as PartKind[]).forEach((kind) => {
-    // fix-05 #1 (player red-circle spec): the mouth dial is a frame-anchored
-    // chest band — centre (50%W, 83%H), horizontal radius 42%W, top arc
-    // never above the chin. Foreground layer; its own clamps.
-    if (kind === 'mouth' && mode === 'large') {
-      const r = viewW * 0.42;
-      const sq = RING_POSE.mouth.squash;
-      const chinY = box.cy + box.h / 2;
-      let cy = Math.max(viewH * 0.83, chinY + r * sq + 8);
-      cy = Math.min(cy, viewH - 40);
-      out.mouth = {cx: viewW * 0.5, cy, r};
-      return;
-    }
-    const l = layout[kind];
-    const r = Math.max(60, Math.min(rMax, l.r * box.h));
-    let cx = box.cx + l.dx * box.w;
-    let cy = box.cy + l.dy * box.h;
-    if (mode === 'compact') {
-      // Whole dial essentially inside the frame.
-      cx = Math.min(viewW - r * 0.55, Math.max(r * 0.55, cx));
-      cy = Math.min(viewH - r * 0.62 - LAYOUT_RESERVE.bottom, Math.max(r * 0.55 + 16, cy));
-    } else {
-      // Discs may bleed off-frame (ref-03), but each ring's selection-focus
-      // point stays between the top bar band and the shutter zone.
-      const {ox, oy} = focusOffset(kind, r);
-      cx = Math.min(viewW - 56 - ox, Math.max(56 - ox, cx));
-      cy = Math.min(viewH - LAYOUT_RESERVE.bottom - oy, Math.max(LAYOUT_RESERVE.top - oy, cy));
-    }
-    out[kind] = {cx, cy, r};
+  (Object.keys(GALLERY_ROWS) as PartKind[]).forEach((kind) => {
+    const row = GALLERY_ROWS[kind];
+    const {hw, hh} = ringExtent(kind, r);
+    const loX = rail + hw;
+    const hiX = viewW - rail - hw;
+    const loY = Math.max(LAYOUT_RESERVE.top, rail) + hh;
+    const hiY = viewH - Math.max(LAYOUT_RESERVE.bottom, rail) - hh;
+    const clamp = (v: number, lo: number, hi: number) =>
+      lo > hi ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v));
+    out[kind] = {
+      cx: clamp(viewW * row.cx, loX, hiX),
+      cy: clamp(viewH * row.cy, loY, hiY),
+      r,
+    };
   });
   return out;
 }

@@ -37,8 +37,15 @@ export class Vision {
 
   async startCamera(): Promise<boolean> {
     try {
+      // 720p, not the old 640x480 — the single biggest cause of the soft
+      // cutout the player called cheap. On a 3x phone the sitter used to be
+      // magnified ~5x from source, and the segmentation mask comes back at
+      // CAMERA resolution, so the low-res frame blurred the person AND the
+      // edge that cuts them out. Both landmarkers downsample internally, so
+      // the extra cost is the frame upload, not inference. `ideal` degrades
+      // on its own wherever 720p is not offered.
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {width: {ideal: 640}, height: {ideal: 480}, facingMode: 'user'},
+        video: {width: {ideal: 1280}, height: {ideal: 720}, facingMode: 'user'},
         audio: false,
       });
       this.video.srcObject = stream;

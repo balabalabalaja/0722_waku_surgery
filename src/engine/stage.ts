@@ -9,7 +9,9 @@ import {
   faceAnchors,
   lerp,
   ringSpecs,
+  sitterTransform,
   videoToScreen,
+  type CoverTransform,
   type FaceAnchors,
   type Pt,
 } from './facefit';
@@ -242,6 +244,14 @@ export class CollageEngine {
     return {x: a.cx + f.dx - w / 2, y: a.cy + f.dy - h / 2, w, h};
   }
 
+  // The sitter is small now (SITTER.zoom), so the three part windows sit close
+  // together and a flat 26px grab radius around every corner would fuse them
+  // into one dead zone that also swallows grabs meant for the dials behind.
+  // Scale it with the face, floored so it never drops under a thumb.
+  private get handleHit(): number {
+    return Math.max(14, Math.min(TUNING.handleHitPx, this.anchors.box.w * 0.24));
+  }
+
   private markInteracted() {
     if (!this.firstInteractionFired) {
       this.firstInteractionFired = true;
@@ -273,7 +283,7 @@ export class CollageEngine {
       const cy = box.y + box.h / 2;
       for (const [px, py] of corners) {
         const d = Math.hypot(x - px, y - py);
-        if (d < TUNING.handleHitPx && (!bestCorner || d < bestCorner.d)) {
+        if (d < this.handleHit && (!bestCorner || d < bestCorner.d)) {
           bestCorner = {kind, d, cx, cy};
         }
       }
@@ -318,7 +328,7 @@ export class CollageEngine {
         [box.x, box.y + box.h],
         [box.x + box.w, box.y + box.h],
       ];
-      const guard = TUNING.handleHitPx + TUNING.ringExclusionPx;
+      const guard = this.handleHit + TUNING.ringExclusionPx;
       if (corners2.some(([px, py]) => Math.hypot(x - px, y - py) < guard)) return;
     }
 
@@ -451,7 +461,7 @@ export class CollageEngine {
     // Vision
     const res = this.vision.detect(now);
     if (res.face) {
-      const t = coverTransform(this.vision.video.videoWidth, this.vision.video.videoHeight, this.viewW, this.viewH);
+      const t = sitterTransform(this.vision.video.videoWidth, this.vision.video.videoHeight, this.viewW, this.viewH);
       const pts = res.face.map((lm) =>
         videoToScreen(lm, this.vision.video.videoWidth, this.vision.video.videoHeight, t),
       );
@@ -716,7 +726,7 @@ export class CollageEngine {
 
   private drawVideoCover(ctx: CanvasRenderingContext2D) {
     const v = this.vision.video;
-    const t = coverTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH);
+    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH);
     ctx.save();
     ctx.translate(this.viewW, 0);
     ctx.scale(-1, 1);
@@ -768,6 +778,63 @@ export class CollageEngine {
   }
 
   private personCanvas: HTMLCanvasElement | null = null;
+  private maskA: HTMLCanvasElement | null = null;
+  private maskB: HTMLCanvasElement | null = null;
+
+  // Soft-edge cutout, second half of the fix. The confidence mask comes back
+  // at CAMERA resolution (measured: 1280x720 in, 1280x720 mask), so the blur
+  // was never the segmenter being coarse — it was magnification. At the old
+  // 640x480 the mask was stretched ~5.3x to reach a 3x phone's device pixels
+  // and bilinear interpolation smeared a hard edge into a wide ramp. 720p
+  // plus the sitter zoom drops that to ~1.8x, which is most of the win.
+  //
+  // This kills the residual ramp: re-steepen the alpha AFTER the upscale,
+  // with composite ops only — no getImageData on the hot path. Note that
+  // tightening the thresholds in Vision.updateMask cannot substitute, since
+  // the ramp is created downstream of them.
+  //   A = a^2            two draws, the second `destination-in`  (erode: the
+  //                      faint outer haze collapses, 0.1 -> 0.01)
+  //   B = 1-(1-A)^3      three `source-over` draws of A          (dilate: the
+  //                      core comes back to opaque)
+  // Net S-curve .1->.03  .3->.25  .5->.58  .7->.87  .9->.99.
+  // Run at half canvas resolution: the work is 4x cheaper and the residual 2x
+  // upscale into the person layer is only ~1px of antialiasing, which is what
+  // keeps the edge from going jagged.
+  private sharpenMask(mask: HTMLCanvasElement, t: CoverTransform, vw: number, vh: number) {
+    const w = Math.max(1, Math.round(this.canvas.width / 2));
+    const h = Math.max(1, Math.round(this.canvas.height / 2));
+    if (!this.maskA) {
+      this.maskA = document.createElement('canvas');
+      this.maskB = document.createElement('canvas');
+    }
+    const A = this.maskA;
+    const B = this.maskB!;
+    if (A.width !== w || A.height !== h) {
+      A.width = w;
+      A.height = h;
+      B.width = w;
+      B.height = h;
+    }
+    const ac = A.getContext('2d')!;
+    const bc = B.getContext('2d')!;
+    const s = this.dpr / 2; // CSS px -> half-res device px
+    ac.setTransform(s, 0, 0, s, 0, 0);
+    ac.imageSmoothingEnabled = true;
+    ac.imageSmoothingQuality = 'high';
+    ac.globalCompositeOperation = 'source-over';
+    ac.clearRect(0, 0, this.viewW, this.viewH);
+    ac.translate(this.viewW, 0);
+    ac.scale(-1, 1); // the mask rides the same mirrored cover as the video
+    ac.drawImage(mask, t.offX, t.offY, vw * t.scale, vh * t.scale);
+    ac.globalCompositeOperation = 'destination-in';
+    ac.drawImage(mask, t.offX, t.offY, vw * t.scale, vh * t.scale);
+
+    bc.setTransform(1, 0, 0, 1, 0, 0);
+    bc.globalCompositeOperation = 'source-over';
+    bc.clearRect(0, 0, w, h);
+    for (let i = 0; i < 3; i++) bc.drawImage(A, 0, 0);
+    return B;
+  }
 
   // fix-01 mechanic ①: the person re-drawn over the rings. Preferred source
   // is the selfie-segmentation mask; without it, a feathered head+torso blob
@@ -788,11 +855,8 @@ export class CollageEngine {
     pctx.globalCompositeOperation = 'destination-in';
     const mask = this.vision.maskCanvas;
     if (mask) {
-      // The mask is aligned with the raw video frame — same mirrored cover.
-      const t = coverTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH);
-      pctx.translate(this.viewW, 0);
-      pctx.scale(-1, 1);
-      pctx.drawImage(mask, t.offX, t.offY, v.videoWidth * t.scale, v.videoHeight * t.scale);
+      const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH);
+      pctx.drawImage(this.sharpenMask(mask, t, v.videoWidth, v.videoHeight), 0, 0, this.viewW, this.viewH);
     } else {
       const b = this.anchors.box;
       const w = b.w * 2.6;

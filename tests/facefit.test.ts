@@ -1,25 +1,40 @@
 import {strict as assert} from 'node:assert';
 import test from 'node:test';
 import {
+  LAYOUT_RESERVE,
+  SITTER,
   coverTransform,
   defaultAnchors,
   faceAnchors,
   ringSpecs,
+  sitterTransform,
   videoToScreen,
   type Pt,
 } from '../src/engine/facefit.ts';
+import {RING_POSE} from '../src/engine/rings.ts';
 
-test('cover transform fills the viewport and mirrors x', () => {
-  // 640x480 video into a 390x844 portrait view: height-limited.
-  const t = coverTransform(640, 480, 390, 844);
-  assert.ok(Math.abs(480 * t.scale - 844) < 1e-6);
-  assert.ok(t.offX < 0, 'sides crop off-screen');
-  // A landmark at video center maps to view center x (mirroring is symmetric).
-  const c = videoToScreen({x: 0.5, y: 0.5}, 640, 480, t);
+test('the painted backdrop keeps a plain full-bleed cover fit', () => {
+  // coverTransform and sitterTransform were one function until the sitter
+  // zoom landed, and sharing it silently shrank the backdrop off full-bleed.
+  const t = coverTransform(900, 1600, 390, 844);
+  assert.ok(900 * t.scale >= 390 - 1e-6 && 1600 * t.scale >= 844 - 1e-6, 'fills the stage');
+  assert.ok(Math.abs(t.offX * 2 + 900 * t.scale - 390) < 1e-6, 'centred on x');
+  assert.ok(Math.abs(t.offY * 2 + 1600 * t.scale - 844) < 1e-6, 'centred on y');
+});
+
+test('camera rect is cover x SITTER.zoom, centred on x and pinned to the floor', () => {
+  // 1280x720 video into a 390x844 portrait view: height-limited.
+  const t = sitterTransform(1280, 720, 390, 844);
+  assert.ok(Math.abs(720 * t.scale - 844 * SITTER.zoom) < 1e-6, 'zoomed below cover');
+  assert.ok(t.offX < 0, 'sides still crop off-screen');
+  // Bottom edge sits exactly on the stage floor — a centred rect would chop
+  // the torso along a straight line partway up the screen.
+  assert.ok(Math.abs(t.offY + 720 * t.scale - 844) < 1e-6, 'bottom-anchored');
+  // Mirroring stays symmetric about the centre.
+  const c = videoToScreen({x: 0.5, y: 0.5}, 1280, 720, t);
   assert.ok(Math.abs(c.x - 195) < 1e-6);
-  assert.ok(Math.abs(c.y - 422) < 1e-6);
   // A landmark on the video's left lands on the screen's right (mirror).
-  const l = videoToScreen({x: 0.1, y: 0.5}, 640, 480, t);
+  const l = videoToScreen({x: 0.1, y: 0.5}, 1280, 720, t);
   assert.ok(l.x > 195);
 });
 
@@ -63,23 +78,56 @@ test('faceAnchors picks the screen-right eye and centers parts on the nose', () 
   assert.equal(a.box.h, 300);
 });
 
-test('ring specs follow the layout sides and stay reachable on screen', () => {
-  const a = faceAnchors(syntheticFace());
-  const rings = ringSpecs(a.box, 390, 844);
-  assert.ok(rings.nose.cx < a.box.cx, 'nose dial upper-left');
-  assert.ok(rings.nose.cy < a.box.cy);
-  assert.ok(rings.eye.cx > a.box.cx, 'eye dial right side');
-  assert.ok(rings.mouth.cy > a.box.cy, 'mouth dial at the chin (fix-04b foreground ring)');
-  for (const r of Object.values(rings)) {
-    assert.ok(r.cy > 0 && r.cy < 844);
-  }
+// On-screen half-extents of a drawn ring: radius + glass tube, rotated by the
+// pose. This is what actually has to clear the gilt moulding — clamping on r
+// alone slid the tube under the frame.
+const TUBE_OUTSET = 1.125;
+function extent(kind: 'eye' | 'nose' | 'mouth', r: number) {
+  const {theta, squash} = RING_POSE[kind];
+  const rx = r * TUBE_OUTSET;
+  const ry = r * squash * TUBE_OUTSET;
+  return {
+    hw: Math.hypot(rx * Math.cos(theta), ry * Math.sin(theta)),
+    hh: Math.hypot(rx * Math.sin(theta), ry * Math.cos(theta)),
+  };
+}
+
+// The regression this whole layout exists to prevent: a ring hanging off the
+// side of a portrait stage. Checked on the narrowest and the widest phone
+// shapes we ship to, both of which used to clip.
+for (const [w, h] of [
+  [390, 844],
+  [360, 780],
+  [430, 932],
+  [412, 883],
+]) {
+  test(`all three dials sit entirely inside the frame opening at ${w}x${h}`, () => {
+    const rings = ringSpecs(defaultAnchors(w, h).box, w, h);
+    const rail = w * 0.087; // --surgery-frame-rail
+    assert.equal(Object.keys(rings).length, 3);
+    for (const [kind, s] of Object.entries(rings)) {
+      const {hw, hh} = extent(kind as 'eye' | 'nose' | 'mouth', s.r);
+      assert.ok(s.cx - hw >= rail - 0.5, `${kind} clears the left rail`);
+      assert.ok(s.cx + hw <= w - rail + 0.5, `${kind} clears the right rail`);
+      assert.ok(s.cy - hh >= LAYOUT_RESERVE.top - 0.5, `${kind} clears the host chrome`);
+      assert.ok(s.cy + hh <= h - LAYOUT_RESERVE.bottom + 0.5, `${kind} clears the floor`);
+      assert.ok(s.r > 40, `${kind} stays big enough to grab`);
+    }
+  });
+}
+
+test('the dials are frame-anchored — the face box cannot move them', () => {
+  const near = ringSpecs({cx: 40, cy: 700, w: 320, h: 420}, 390, 844);
+  const far = ringSpecs({cx: 340, cy: 90, w: 60, h: 80}, 390, 844);
+  assert.deepEqual(near, far, 'ring geometry is independent of the sitter');
+  // ...and they stack down the picture in reading order.
+  assert.ok(near.eye.cy < near.nose.cy && near.nose.cy < near.mouth.cy);
 });
 
-test('default anchors exist without a face and rings stay on screen', () => {
+test('default anchors put a small sitter low, inside the ring stack', () => {
   const a = defaultAnchors(390, 844);
   const rings = ringSpecs(a.box, 390, 844);
-  for (const r of Object.values(rings)) {
-    assert.ok(r.cx > -r.r && r.cx < 390 + r.r);
-    assert.ok(r.cy > 0 && r.cy < 844);
-  }
+  assert.ok(a.box.w < 390 * 0.3, 'sitter is narrower than the dials');
+  assert.ok(a.box.w * 1.6 < rings.nose.r * 2, 'dials read bigger than the sitter');
+  assert.ok(a.box.cy > 844 * 0.45, 'sitter sits low, as the bottom-anchored camera puts them');
 });

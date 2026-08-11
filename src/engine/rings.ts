@@ -30,12 +30,17 @@ const RING_PART: Record<PartKind, {w: number; h: number}> = {
 // selection-focus angle (front-bottom for all three; the mouth dial is a
 // FOREGROUND ring since the fix-04 player correction, so its bottom arc is
 // always visible at the chin).
+// Gallery composition (2026-08-10): three plates stacked down the picture, so
+// all three sit at nearly the same shallow tilt — the small opposing thetas
+// keep the stack from reading as three identical stacked hoops. The squash is
+// looser than the old outboard discs because these rings no longer have to
+// hide behind the sitter; a rounder plate reads as a plate.
 export const RING_POSE: Record<PartKind, {theta: number; squash: number; focus: number}> = {
-  nose: {theta: -0.22, squash: 0.52, focus: Math.PI / 2},
-  eye: {theta: 0.16, squash: 0.58, focus: Math.PI / 2},
-  // fix-05 #1: flat horizontal band at the chest (player's red-circle spec);
-  // selection focus on the lower-LEFT arc, clear of the centre shutter.
-  mouth: {theta: 0, squash: 0.46, focus: Math.PI * 0.75},
+  nose: {theta: -0.08, squash: 0.62, focus: Math.PI / 2},
+  eye: {theta: 0.09, squash: 0.62, focus: Math.PI / 2},
+  // fix-05 #1: selection focus on the lower-LEFT arc, clear of the centre
+  // shutter, which still sits inside the bottom ring.
+  mouth: {theta: 0.03, squash: 0.6, focus: Math.PI * 0.75},
 };
 
 const TUBE_R = 0.125; // tube radius / ring radius — thin bore

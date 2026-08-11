@@ -85,13 +85,15 @@ body {
   animation: fade-in 0.35s ease-out both;
 }
 
+/* The card hangs straight — a painting, not a tossed polaroid (2026-08-10).
+   Rise and settle only; no rotation at either end. */
 @keyframes card-slide {
   from {
-    transform: translateY(64px) rotate(2deg) scale(0.94);
+    transform: translateY(64px) scale(0.94);
     opacity: 0;
   }
   to {
-    transform: translateY(0) rotate(-1deg) scale(1);
+    transform: translateY(0) scale(1);
     opacity: 1;
   }
 }
