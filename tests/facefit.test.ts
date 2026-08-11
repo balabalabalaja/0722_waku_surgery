@@ -7,6 +7,7 @@ import {
   defaultAnchors,
   faceAnchors,
   ringSpecs,
+  sitterLift,
   sitterTransform,
   videoToScreen,
   type Pt,
@@ -22,6 +23,26 @@ test('the painted backdrop keeps a plain full-bleed cover fit', () => {
   assert.ok(Math.abs(t.offY * 2 + 1600 * t.scale - 844) < 1e-6, 'centred on y');
 });
 
+test('bounded float: lift ramps in only as the player raises their head', () => {
+  // Pinned while the face sits mid-frame or lower, full lift at the top.
+  assert.equal(sitterLift(0.9), 0);
+  assert.equal(sitterLift(SITTER.liftFrom), 0);
+  assert.equal(sitterLift(0), SITTER.floatMax);
+  assert.ok(sitterLift(0.2) > 0 && sitterLift(0.2) < SITTER.floatMax);
+  // Raising the head must ALWAYS raise the face on screen — the lift adds gain
+  // in the upper half, it must not overtake and invert the mapping.
+  const rectH = 844 * SITTER.zoom;
+  const screenY = (n: number) => 844 - rectH - sitterLift(n) + n * rectH;
+  let prev = -Infinity;
+  for (let n = 0; n <= 1.0001; n += 0.05) {
+    const y = screenY(n);
+    assert.ok(y > prev, `face must rise monotonically, broke at faceNormY=${n.toFixed(2)}`);
+    prev = y;
+  }
+  // ...and the reachable band is the top-72%-ish the bounded float promises.
+  assert.ok(screenY(0) < 844 * 0.3, `face should reach the top third, got ${screenY(0)}`);
+});
+
 test('camera rect is cover x SITTER.zoom, centred on x and pinned to the floor', () => {
   // 1280x720 video into a 390x844 portrait view: height-limited.
   const t = sitterTransform(1280, 720, 390, 844);
@@ -29,7 +50,12 @@ test('camera rect is cover x SITTER.zoom, centred on x and pinned to the floor',
   assert.ok(t.offX < 0, 'sides still crop off-screen');
   // Bottom edge sits exactly on the stage floor — a centred rect would chop
   // the torso along a straight line partway up the screen.
-  assert.ok(Math.abs(t.offY + 720 * t.scale - 844) < 1e-6, 'bottom-anchored');
+  assert.ok(Math.abs(t.offY + 720 * t.scale - 844) < 1e-6, 'bottom-anchored with no lift');
+  // A lift raises the rect by exactly that many pixels, nothing else moves.
+  const lifted = sitterTransform(1280, 720, 390, 844, 90);
+  assert.equal(lifted.scale, t.scale);
+  assert.equal(lifted.offX, t.offX);
+  assert.ok(Math.abs(lifted.offY - (t.offY - 90)) < 1e-6);
   // Mirroring stays symmetric about the centre.
   const c = videoToScreen({x: 0.5, y: 0.5}, 1280, 720, t);
   assert.ok(Math.abs(c.x - 195) < 1e-6);

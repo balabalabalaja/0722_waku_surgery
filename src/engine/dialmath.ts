@@ -1,4 +1,4 @@
-// Pure dial math: slot angles, selection, drag/palm torque, momentum + snap.
+// Pure dial math: slot angles, selection, drag torque, momentum + snap.
 
 export const TAU = Math.PI * 2;
 
@@ -33,25 +33,6 @@ export function angleDelta(from: number, to: number): number {
 
 export function pointerAngle(cx: number, cy: number, px: number, py: number): number {
   return Math.atan2(py - cy, px - cx);
-}
-
-// Angular velocity from a moving palm: tangential component of its motion
-// (cross product), so pushing along the rim spins the wheel naturally.
-export function palmAngularVelocity(
-  cx: number,
-  cy: number,
-  prev: {x: number; y: number},
-  cur: {x: number; y: number},
-  dt: number,
-  r: number,
-): number {
-  if (dt <= 0) return 0;
-  const dx = cur.x - cx;
-  const dy = cur.y - cy;
-  const vx = (cur.x - prev.x) / dt;
-  const vy = (cur.y - prev.y) / dt;
-  const rr = Math.max(r * 0.35, Math.hypot(dx, dy));
-  return (dx * vy - dy * vx) / (rr * rr);
 }
 
 // Nearest dial angle at which some slot sits exactly on the focus point.

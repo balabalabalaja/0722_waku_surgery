@@ -1,5 +1,6 @@
 // CollageEngine: owns the full-bleed canvas, the rAF loop, dials, applied
-// parts, HUD and input routing. React owns DOM chrome (sidebar, shutter,
+// parts, HUD and input routing. Input is touch only — palm steering went with
+// HandLandmarker (see vision.ts). React owns DOM chrome (sidebar, shutter,
 // result overlay) and the top state machine.
 
 import type {Anchor, HudConfig, PartFit, PartKind, RingSpec, Selection} from '../types';
@@ -9,13 +10,15 @@ import {
   faceAnchors,
   lerp,
   ringSpecs,
+  SITTER,
+  sitterLift,
   sitterTransform,
   videoToScreen,
   type CoverTransform,
   type FaceAnchors,
   type Pt,
 } from './facefit';
-import {angleDelta, palmAngularVelocity} from './dialmath';
+import {angleDelta} from './dialmath';
 import {Dial} from './rings';
 import type {PartBank} from './parts';
 import type {Vision} from './vision';
@@ -23,15 +26,15 @@ import {playSfx} from './audio';
 
 const KINDS: PartKind[] = ['eye', 'nose', 'mouth'];
 
-// Hand-feel tuning lives in one place for Harden's calibration pass.
+// MediaPipe FaceLandmarker indices used to read the face's height in frame.
+const IDX_FACE_TOP = 10;
+const IDX_CHIN = 152;
+
+// Feel tuning lives in one place for Harden's calibration pass.
 export const TUNING = {
   faceLostHoldMs: 2000,
   anchorEase: 8,
   ringEase: 5,
-  palmGain: 0.55,
-  palmMaxSpeed: 8,
-  palmMinSpeed: 0.25,
-  palmZoneSlack: 1.3,
   dragMaxSpeed: 12,
   // Sub-step drags still advance one notch instead of springing back
   // (gate item 3 responsiveness).
@@ -82,15 +85,6 @@ type DragMode =
   | {type: 'scale'; kind: PartKind; startDist: number; startScale: number}
   | {type: 'move'; kind: PartKind; startX: number; startY: number; startDx: number; startDy: number};
 
-const HAND_CONNECTIONS: [number, number][] = [
-  [0, 1], [1, 2], [2, 3], [3, 4],
-  [0, 5], [5, 6], [6, 7], [7, 8],
-  [9, 10], [10, 11], [11, 12],
-  [13, 14], [14, 15], [15, 16],
-  [0, 17], [17, 18], [18, 19], [19, 20],
-  [5, 9], [9, 13], [13, 17],
-];
-
 export interface EngineCallbacks {
   onFirstInteraction?: () => void;
   onFaceChange?: (visible: boolean) => void;
@@ -113,7 +107,7 @@ export class CollageEngine {
   private targetAnchors: FaceAnchors;
   private rings: Record<PartKind, RingSpec>;
   private meshPts: Pt[] = [];
-  private handPts: Pt[][] = [];
+  private sitterLift = 0; // eased camera-rect lift off the stage floor
   private lastFaceAt = -Infinity;
   faceVisible = false;
 
@@ -128,7 +122,6 @@ export class CollageEngine {
   private lastSel: Record<PartKind, number>;
   private drag: DragMode = {type: 'none'};
   private bracketTouchedAt: Record<PartKind, number> = {eye: -1e9, nose: -1e9, mouth: -1e9};
-  private palmPrev = new Map<number, {x: number; y: number; t: number}>();
   private inputEnabled = () => true;
   private cb: EngineCallbacks;
   private firstInteractionFired = false;
@@ -411,40 +404,6 @@ export class CollageEngine {
     return {x: e.clientX - r.left, y: e.clientY - r.top};
   }
 
-  // ---------- palm steering ----------
-
-  private steerWithPalms(now: number) {
-    if (this.handPts.length === 0) {
-      this.palmPrev.clear();
-      return;
-    }
-    this.handPts.forEach((hand, hi) => {
-      if (hand.length < 18) return;
-      const palm = {
-        x: (hand[0].x + hand[5].x + hand[9].x + hand[13].x + hand[17].x) / 5,
-        y: (hand[0].y + hand[5].y + hand[9].y + hand[13].y + hand[17].y) / 5,
-      };
-      const prev = this.palmPrev.get(hi);
-      this.palmPrev.set(hi, {...palm, t: now});
-      if (!prev) return;
-      const dt = (now - prev.t) / 1000;
-      if (dt <= 0 || dt > 0.25) return;
-      for (const kind of KINDS) {
-        if (this.drag.type === 'ring' && this.drag.kind === kind) continue;
-        const spec = this.rings[kind];
-        const dial = this.dials[kind];
-        const dist = dial.localDist(spec, palm.x, palm.y);
-        if (Math.abs(dist - spec.r) > dial.bandWidth(spec.r) * TUNING.palmZoneSlack) continue;
-        const w = palmAngularVelocity(spec.cx, spec.cy, prev, palm, dt, spec.r);
-        if (Math.abs(w) < TUNING.palmMinSpeed) continue;
-        dial.idle = false;
-        this.markInteracted();
-        const v = dial.sim.velocity * 0.8 + w * TUNING.palmGain;
-        dial.sim.velocity = Math.max(-TUNING.palmMaxSpeed, Math.min(TUNING.palmMaxSpeed, v));
-      }
-    });
-  }
-
   // ---------- frame loop ----------
 
   private loop = (now: number) => {
@@ -460,8 +419,21 @@ export class CollageEngine {
 
     // Vision
     const res = this.vision.detect(now);
+    // Camera-rect lift, resolved BEFORE the landmarks are mapped so the sitter
+    // and every anchor ride the exact same rect this frame. Eased hard: the
+    // whole person moves with it. Falls back to the pinned rect with no face.
+    const targetLift = res.face
+      ? sitterLift((res.face[IDX_FACE_TOP].y + res.face[IDX_CHIN].y) / 2)
+      : 0;
+    this.sitterLift = lerp(this.sitterLift, targetLift, 1 - Math.exp(-SITTER.liftEase * dt));
     if (res.face) {
-      const t = sitterTransform(this.vision.video.videoWidth, this.vision.video.videoHeight, this.viewW, this.viewH);
+      const t = sitterTransform(
+        this.vision.video.videoWidth,
+        this.vision.video.videoHeight,
+        this.viewW,
+        this.viewH,
+        this.sitterLift,
+      );
       const pts = res.face.map((lm) =>
         videoToScreen(lm, this.vision.video.videoWidth, this.vision.video.videoHeight, t),
       );
@@ -472,11 +444,7 @@ export class CollageEngine {
         this.faceVisible = true;
         this.cb.onFaceChange?.(true);
       }
-      this.handPts = res.hands.map((hand) =>
-        hand.map((lm) => videoToScreen(lm, this.vision.video.videoWidth, this.vision.video.videoHeight, t)),
-      );
     } else {
-      this.handPts = [];
       if (now - this.lastFaceAt > TUNING.faceLostHoldMs && this.faceVisible) {
         this.faceVisible = false;
         this.meshPts = [];
@@ -499,8 +467,6 @@ export class CollageEngine {
         r: lerp(cur.r, tgt.r, kr),
       };
     }
-
-    this.steerWithPalms(now);
 
     // Dials + selection changes → flights
     for (const kind of KINDS) {
@@ -628,7 +594,6 @@ export class CollageEngine {
     }
 
     if (opts.hud) this.drawHud(ctx, now);
-    if (opts.hud) this.drawHands(ctx);
 
     ctx.restore();
   }
@@ -690,33 +655,9 @@ export class CollageEngine {
     }
   }
 
-  private drawHands(ctx: CanvasRenderingContext2D) {
-    for (const hand of this.handPts) {
-      if (hand.length < 21) continue;
-      ctx.save();
-      ctx.shadowColor = 'rgba(0,0,0,0.6)';
-      ctx.shadowBlur = 3;
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-      ctx.lineWidth = 1.5;
-      for (const [a, b] of HAND_CONNECTIONS) {
-        ctx.beginPath();
-        ctx.moveTo(hand[a].x, hand[a].y);
-        ctx.lineTo(hand[b].x, hand[b].y);
-        ctx.stroke();
-      }
-      hand.forEach((p, idx) => {
-        ctx.fillStyle = idx % 4 === 0 ? '#ffffff' : 'rgba(255,255,255,0.85)';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, idx === 0 ? 4 : 2.5, 0, Math.PI * 2);
-        ctx.fill();
-      });
-      ctx.restore();
-    }
-  }
-
   private drawVideoCover(ctx: CanvasRenderingContext2D) {
     const v = this.vision.video;
-    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH);
+    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH, this.sitterLift);
     ctx.save();
     ctx.translate(this.viewW, 0);
     ctx.scale(-1, 1);
@@ -838,6 +779,7 @@ export class CollageEngine {
       pc.height = this.canvas.height;
     }
     const pctx = pc.getContext('2d')!;
+    const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH, this.sitterLift);
     pctx.save();
     pctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     pctx.clearRect(0, 0, this.viewW, this.viewH);
@@ -845,7 +787,6 @@ export class CollageEngine {
     pctx.globalCompositeOperation = 'destination-in';
     const mask = this.vision.maskCanvas;
     if (mask) {
-      const t = sitterTransform(v.videoWidth, v.videoHeight, this.viewW, this.viewH);
       pctx.drawImage(this.sharpenMask(mask, t, v.videoWidth, v.videoHeight), 0, 0, this.viewW, this.viewH);
     } else {
       const b = this.anchors.box;
@@ -853,8 +794,40 @@ export class CollageEngine {
       const h = b.h * 3.0;
       pctx.drawImage(personFallbackMask(), b.cx - w / 2, b.cy - h * 0.28, w, h);
     }
+    pctx.globalCompositeOperation = 'source-over';
+    this.extendTorso(pctx, t.offY + v.videoHeight * t.scale);
     pctx.restore();
     ctx.drawImage(pc, 0, 0, this.viewW, this.viewH);
+  }
+
+  // A lifted camera rect ends above the stage floor, and the segmented torso
+  // would stop dead along that straight edge. Continue it: take the band of
+  // person just above the rect's bottom and stretch it down to the floor.
+  //
+  // The stretch factor is capped near 1.4 by taking a source band proportional
+  // to the gap — a thin band hauled over 120px reads as vertical smear, which
+  // is exactly the cheap look this whole round has been removing. Because the
+  // silhouette's edges run near-vertical down there, stretching preserves the
+  // outline instead of inventing one. If the player's body does not reach the
+  // rect's bottom the band is transparent and this draws nothing, which is the
+  // correct answer.
+  private extendTorso(pctx: CanvasRenderingContext2D, rectBottom: number) {
+    const gap = this.viewH - rectBottom;
+    if (gap <= 1) return;
+    const srcH = Math.min(Math.max(gap * 0.72, 24), rectBottom);
+    if (srcH <= 0) return;
+    const pc = this.personCanvas!;
+    pctx.drawImage(
+      pc,
+      0,
+      (rectBottom - srcH) * this.dpr,
+      pc.width,
+      srcH * this.dpr,
+      0,
+      rectBottom,
+      this.viewW,
+      gap,
+    );
   }
 
   // Abstract sitter drawn ABOVE the rings (it plays the person's layer role

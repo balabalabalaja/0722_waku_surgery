@@ -40,26 +40,51 @@ export function coverTransform(
 // draw, the segmentation mask and all 468 landmarks (and so the part windows
 // anchored to them) — goes through sitterTransform, so nothing can drift out
 // of register when this changes. Safe range ~0.45–0.80.
-export const SITTER = {zoom: 0.58};
+export const SITTER = {
+  zoom: 0.58,
+  // Bounded float (player call 2026-08-10). Pinned dead to the floor, the
+  // camera rect is `zoom` of the stage tall, so the face could never rise
+  // above 42% of the screen no matter how the player moved. The rect may now
+  // lift off the floor by up to `floatMax`, which buys the face roughly the
+  // top 72% of the stage. It is a BOUND, not a free float: everything the
+  // rect uncovers at the bottom has to be faked back in (see
+  // CollageEngine.drawPersonCutout), and the further it lifts the more of the
+  // torso is invention rather than camera.
+  floatMax: 120,
+  // Lift ramps in only once the face is above this normalized height in the
+  // video frame — a player framed mid-shot gets the plain pinned rect.
+  liftFrom: 0.45,
+  // Exponential ease per second. The rect must never twitch: the whole sitter
+  // and every landmark ride on it.
+  liftEase: 5,
+};
 
-// Camera rect: cover x zoom, centred horizontally, pinned to the stage floor.
-// Keep this SEPARATE from coverTransform — they were one function until the
-// zoom landed, and sharing it silently shrank the painted backdrop too.
+// Target lift for a face at normalized height `faceNormY` (0 = top of frame).
+// Monotonic with the player's head: raising the head always raises the face on
+// screen, just with extra gain in the upper half.
+export function sitterLift(faceNormY: number): number {
+  const t = (SITTER.liftFrom - faceNormY) / SITTER.liftFrom;
+  return SITTER.floatMax * Math.min(1, Math.max(0, t));
+}
+
+// Camera rect: cover x zoom, centred horizontally, sitting `lift` above the
+// stage floor. Keep this SEPARATE from coverTransform — they were one function
+// until the zoom landed, and sharing it silently shrank the painted backdrop.
 export function sitterTransform(
   videoW: number,
   videoH: number,
   viewW: number,
   viewH: number,
+  lift = 0,
 ): CoverTransform {
   const scale = Math.max(viewW / videoW, viewH / videoH) * SITTER.zoom;
   return {
     scale,
     offX: (viewW - videoW * scale) / 2,
-    // BOTTOM-anchored, not centred. A camera rect scaled below cover and then
-    // centred would end partway up the stage, and the segmented torso would be
-    // chopped off along a dead straight horizontal line. Pinned to the stage
-    // floor, the body just runs off the bottom edge like any painted bust.
-    offY: viewH - videoH * scale,
+    // Floor-anchored by default. A rect scaled below cover and merely centred
+    // would end partway up the stage and chop the segmented torso off along a
+    // dead straight horizontal line.
+    offY: viewH - videoH * scale - lift,
     viewW,
     viewH,
   };

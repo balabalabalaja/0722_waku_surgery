@@ -3,7 +3,6 @@ import test from 'node:test';
 import {
   angleDelta,
   angleForSlot,
-  palmAngularVelocity,
   selectedIndex,
   slotAngle,
   snapTarget,
@@ -27,17 +26,6 @@ test('selection tracks the front-arc focus point across rotation', () => {
 test('angleDelta wraps across the seam', () => {
   assert.ok(Math.abs(angleDelta(Math.PI - 0.1, -Math.PI + 0.1) - 0.2) < 1e-9);
   assert.ok(Math.abs(angleDelta(-Math.PI + 0.1, Math.PI - 0.1) + 0.2) < 1e-9);
-});
-
-test('palm pushing along the rim spins with the push direction', () => {
-  // Palm above the center moving right → clockwise (positive angle in
-  // canvas coords is clockwise; above-center dx<0? no: dy<0, vx>0 → cross
-  // dx*vy - dy*vx = -dy*vx > 0).
-  const w = palmAngularVelocity(100, 100, {x: 90, y: 40}, {x: 110, y: 40}, 0.016, 80);
-  assert.ok(w > 0);
-  // Palm below the center moving right spins the other way.
-  const w2 = palmAngularVelocity(100, 100, {x: 90, y: 160}, {x: 110, y: 160}, 0.016, 80);
-  assert.ok(w2 < 0);
 });
 
 test('momentum decays and settles exactly on a snap point', () => {

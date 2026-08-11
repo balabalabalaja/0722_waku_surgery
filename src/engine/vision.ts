@@ -1,10 +1,17 @@
-// Camera + MediaPipe (FaceLandmarker / HandLandmarker), reused from the
-// source project's pipeline. Camera and models settle independently and are
-// reported separately so the machine can pick ready vs fallback.
+// Camera + MediaPipe (FaceLandmarker + selfie segmentation). Camera and models
+// settle independently and are reported separately so the machine can pick
+// ready vs fallback.
+//
+// HandLandmarker is GONE (2026-08-10). Palm steering shared the sitter's
+// transform, so once the sitter shrank the hand could only ever appear in the
+// bottom 58% of the stage while the eye dial sits entirely above it — the
+// gesture could not reach one of the three dials by construction, and mapping
+// hands through a wider transform would put the spin somewhere the player is
+// not pointing. Touch drag covers all three dials (verified), so the
+// half-working channel and its model went rather than staying as a trap.
 
 export interface VisionResult {
   face: {x: number; y: number}[] | null; // normalized landmarks
-  hands: {x: number; y: number}[][]; // per hand
 }
 
 export class Vision {
@@ -16,12 +23,10 @@ export class Vision {
   // person. Drawn with the same cover+mirror transform as the video.
   maskCanvas: HTMLCanvasElement | null = null;
   private face: any = null;
-  private hands: any = null;
   private segmenter: any = null;
   private maskCtx: CanvasRenderingContext2D | null = null;
   private maskImage: ImageData | null = null;
   private frameCounter = 0;
-  private lastHands: {x: number; y: number}[][] = [];
   private lastFacePt: {x: number; y: number} | null = null;
   private lastTs = 0;
   trackFps = 0; // measured face-inference rate (fix-05 #2 evidence)
@@ -41,7 +46,7 @@ export class Vision {
       // cutout the player called cheap. On a 3x phone the sitter used to be
       // magnified ~5x from source, and the segmentation mask comes back at
       // CAMERA resolution, so the low-res frame blurred the person AND the
-      // edge that cuts them out. Both landmarkers downsample internally, so
+      // edge that cuts them out. The landmarker downsamples internally, so
       // the extra cost is the frame upload, not inference. `ideal` degrades
       // on its own wherever 720p is not offered.
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -78,7 +83,7 @@ export class Vision {
 
   private async loadModelsOnce(): Promise<boolean> {
     try {
-      const {FilesetResolver, FaceLandmarker, HandLandmarker} = await import('@mediapipe/tasks-vision');
+      const {FilesetResolver, FaceLandmarker} = await import('@mediapipe/tasks-vision');
       const vision = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.8/wasm',
       );
@@ -90,15 +95,6 @@ export class Vision {
         },
         runningMode: 'VIDEO',
         numFaces: 1,
-      });
-      this.hands = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath:
-            'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-          delegate: 'GPU',
-        },
-        runningMode: 'VIDEO',
-        numHands: 2,
       });
       // Person segmentation is optional: rings sit behind the person; if it
       // fails we degrade to a feathered head/torso cutout in the stage.
@@ -170,7 +166,7 @@ export class Vision {
   }
 
   detect(ts: number): VisionResult {
-    if (!this.videoReady || !this.modelsOk) return {face: null, hands: []};
+    if (!this.videoReady || !this.modelsOk) return {face: null};
     // detectForVideo demands strictly increasing timestamps.
     if (ts <= this.lastTs) ts = this.lastTs + 1;
     this.lastTs = ts;
@@ -188,20 +184,17 @@ export class Vision {
         face = fr.faceLandmarks[0];
         this.lastFacePt = {x: face![1].x, y: face![1].y}; // nose tip, mask-orientation probe
       }
-      // Alternate the secondary models: hands on even frames, person
-      // segmentation on odd frames (both tolerate 2-frame latency).
+      // Segmentation runs every other frame; it tolerates 2-frame latency and
+      // this keeps the per-frame inference budget where the face needs it.
       this.frameCounter++;
-      if (this.frameCounter % 2 === 0) {
-        const hr = this.hands.detectForVideo(this.video, ts + 0.25);
-        this.lastHands = hr?.landmarks ?? [];
-      } else if (this.segmenter) {
+      if (this.frameCounter % 2 === 0 && this.segmenter) {
         const sr = this.segmenter.segmentForVideo(this.video, ts + 0.5);
         this.updateMask(sr);
       }
     } catch (err) {
       console.error('inference error', err);
     }
-    return {face, hands: this.lastHands};
+    return {face};
   }
 
   stop() {
